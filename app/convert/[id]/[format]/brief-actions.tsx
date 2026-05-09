@@ -110,7 +110,7 @@ export function BriefActions({
           variant="outline"
           disabled={pending}
         >
-          Regenerate with different register
+          Regenerate with different angle
         </Button>
         <Button onClick={markFinal} disabled={marked}>
           {marked ? "Marked final" : "Mark as final"}
@@ -119,19 +119,34 @@ export function BriefActions({
 
       {showRegen ? (
         <div className="rounded-lg border p-4 space-y-3">
-          <p className="text-sm font-medium">Pick a different register:</p>
-          <RadioGroup value={register} onValueChange={setRegister}>
-            {REGISTERS_BY_FORMAT[format].map((opt, i) => (
-              <div key={i} className="flex items-start gap-2">
+          <p className="text-sm font-medium">Pick a different angle:</p>
+          <RadioGroup
+            value={register}
+            onValueChange={setRegister}
+            className="space-y-2"
+          >
+            {REGISTERS_BY_FORMAT[format].map((opt) => (
+              <Label
+                key={opt.name}
+                htmlFor={`regen-${opt.name}`}
+                className={`flex items-start gap-3 rounded-md border p-3 cursor-pointer transition ${
+                  register === opt.name
+                    ? "border-foreground bg-muted/40"
+                    : "hover:bg-muted/20"
+                }`}
+              >
                 <RadioGroupItem
-                  value={opt}
-                  id={`regen-${i}`}
-                  className="mt-1"
+                  value={opt.name}
+                  id={`regen-${opt.name}`}
+                  className="mt-0.5"
                 />
-                <Label htmlFor={`regen-${i}`} className="font-normal">
-                  {opt}
-                </Label>
-              </div>
+                <div className="space-y-0.5">
+                  <div className="font-medium leading-tight">{opt.name}</div>
+                  <div className="text-sm text-muted-foreground leading-snug font-normal">
+                    {opt.oneliner}
+                  </div>
+                </div>
+              </Label>
             ))}
           </RadioGroup>
           <div className="flex gap-2">

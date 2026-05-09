@@ -8,6 +8,7 @@ import {
 } from "@/lib/diagnostics/brief-text";
 import {
   FORMAT_LABEL,
+  REGISTERS_BY_FORMAT,
   type BriefContent,
   type CaptionReelBrief,
   type CarouselBrief,
@@ -74,13 +75,21 @@ export default async function BriefPage({
 
         <header className="space-y-1">
           <p className="text-sm text-muted-foreground">
-            {FORMAT_LABEL[fmt]} — {brief.register} register
+            {FORMAT_LABEL[fmt]} — {brief.register}
           </p>
           <h1 className="text-2xl font-semibold tracking-tight">
             Production brief
           </h1>
+          {(() => {
+            const opt = REGISTERS_BY_FORMAT[fmt].find(
+              (o) => o.name === brief.register,
+            );
+            return opt ? (
+              <p className="text-sm text-muted-foreground">{opt.oneliner}</p>
+            ) : null;
+          })()}
           {brief.status === "final" ? (
-            <p className="text-xs inline-block rounded-md bg-emerald-50 text-emerald-900 px-2 py-1">
+            <p className="text-xs inline-block mt-2 rounded-md bg-emerald-50 text-emerald-900 px-2 py-1">
               Marked final
             </p>
           ) : null}

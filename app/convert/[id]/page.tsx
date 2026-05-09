@@ -4,13 +4,10 @@ import { createClient } from "@/lib/supabase/server";
 import type { DerivationFormat } from "@/lib/diagnostics/types";
 import { FormatPanel } from "./format-panel";
 
-const FORMAT_DESCRIPTIONS: Record<DerivationFormat, string> = {
-  carousel:
-    "What does the carousel do that the talking head can't? Pick a register that fits how the audience consumes saved reference content.",
-  caption_reel:
-    "What does the caption reel do that the talking head can't? Pick a register that lands silently with text overlays carrying the message.",
-  voiceover_broll:
-    "Who is the voiceover speaking as? Pick whether the audio is freshly recorded or sourced from the original talking-head shoot.",
+const FORMAT_QUESTIONS: Record<DerivationFormat, string> = {
+  carousel: "What does the carousel do that the talking head can't?",
+  caption_reel: "What does the caption reel do that the talking head can't?",
+  voiceover_broll: "Who is the voiceover speaking as?",
 };
 
 export default async function ConvertPage({
@@ -49,13 +46,15 @@ export default async function ConvertPage({
     <div className="min-h-svh flex flex-col">
       <SiteHeader />
       <main className="flex-1 px-6 py-10 max-w-2xl mx-auto w-full space-y-6">
-        <header className="space-y-1">
+        <header className="space-y-2">
           <h1 className="text-2xl font-semibold tracking-tight">
-            Ready to derive. Pick the register for each format.
+            Ready to derive. Pick the angle for each format.
           </h1>
           <p className="text-sm text-muted-foreground">
-            Each format gets its own brief. Regenerate any panel without
-            affecting the others.
+            Each format becomes a separate production brief. The angle you
+            pick changes what the brief sounds like — clinical, vulnerable,
+            or contrarian — without changing the underlying idea. Regenerate
+            any panel without affecting the others.
           </p>
         </header>
 
@@ -63,19 +62,19 @@ export default async function ConvertPage({
           <FormatPanel
             pieceId={id}
             format="carousel"
-            description={FORMAT_DESCRIPTIONS.carousel}
+            question={FORMAT_QUESTIONS.carousel}
             existing={existingByFormat.carousel}
           />
           <FormatPanel
             pieceId={id}
             format="caption_reel"
-            description={FORMAT_DESCRIPTIONS.caption_reel}
+            question={FORMAT_QUESTIONS.caption_reel}
             existing={existingByFormat.caption_reel}
           />
           <FormatPanel
             pieceId={id}
             format="voiceover_broll"
-            description={FORMAT_DESCRIPTIONS.voiceover_broll}
+            question={FORMAT_QUESTIONS.voiceover_broll}
             existing={existingByFormat.voiceover_broll}
           />
         </div>

@@ -14,20 +14,20 @@ import {
 interface FormatPanelProps {
   pieceId: string;
   format: DerivationFormat;
-  description: string;
+  question: string;
   existing?: { register: string };
 }
 
 export function FormatPanel({
   pieceId,
   format,
-  description,
+  question,
   existing,
 }: FormatPanelProps) {
   const router = useRouter();
-  const registers = REGISTERS_BY_FORMAT[format];
+  const options = REGISTERS_BY_FORMAT[format];
   const [register, setRegister] = useState<string>(
-    existing?.register ?? registers[0],
+    existing?.register ?? options[0].name,
   );
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,40 +52,57 @@ export function FormatPanel({
     }
   };
 
+  const existingOption = existing
+    ? options.find((o) => o.name === existing.register)
+    : undefined;
+
   return (
-    <section className="rounded-lg border p-5 space-y-4">
-      <div>
+    <section className="rounded-lg border p-5 space-y-5">
+      <div className="space-y-1">
         <h2 className="font-semibold">{FORMAT_LABEL[format]}</h2>
-        <p className="text-sm text-muted-foreground">{description}</p>
+        <p className="text-sm text-muted-foreground">{question}</p>
       </div>
 
       {existing ? (
         <p className="text-xs rounded-md bg-emerald-50 text-emerald-900 px-3 py-2">
-          A brief was already generated with the <strong>{existing.register}</strong>{" "}
-          register. Generating again will discard the previous brief.
+          Already generated as <strong>{existing.register}</strong>
+          {existingOption ? ` — ${existingOption.oneliner.toLowerCase()}` : ""}{" "}
+          Generating again will replace it.
         </p>
       ) : null}
 
-      <div>
-        <p className="text-sm mb-2">Pick a register:</p>
-        <RadioGroup value={register} onValueChange={setRegister}>
-          {registers.map((opt, i) => (
-            <div key={i} className="flex items-start gap-2">
-              <RadioGroupItem
-                value={opt}
-                id={`${format}-${i}`}
-                className="mt-1"
-              />
-              <Label
-                htmlFor={`${format}-${i}`}
-                className="font-normal leading-snug"
-              >
-                {opt}
-              </Label>
+      <RadioGroup
+        value={register}
+        onValueChange={setRegister}
+        className="space-y-3"
+      >
+        {options.map((opt) => (
+          <Label
+            key={opt.name}
+            htmlFor={`${format}-${opt.name}`}
+            className={`flex items-start gap-3 rounded-md border p-3 cursor-pointer transition ${
+              register === opt.name
+                ? "border-foreground bg-muted/40"
+                : "hover:bg-muted/20"
+            }`}
+          >
+            <RadioGroupItem
+              value={opt.name}
+              id={`${format}-${opt.name}`}
+              className="mt-0.5"
+            />
+            <div className="space-y-1">
+              <div className="font-medium leading-tight">{opt.name}</div>
+              <div className="text-sm text-muted-foreground leading-snug font-normal">
+                {opt.oneliner}
+              </div>
+              <div className="text-xs italic text-muted-foreground/80 leading-snug font-normal">
+                {opt.example}
+              </div>
             </div>
-          ))}
-        </RadioGroup>
-      </div>
+          </Label>
+        ))}
+      </RadioGroup>
 
       {error ? (
         <p
@@ -102,7 +119,7 @@ export function FormatPanel({
             ? "Generating..."
             : existing
               ? "Regenerate"
-              : "Configure"}
+              : "Generate brief"}
         </Button>
         {existing ? (
           <Button
