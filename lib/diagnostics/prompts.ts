@@ -418,3 +418,106 @@ export function fillTemplate(
 ): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? "");
 }
+
+// ============================================================================
+// Derivation (Phase 4) prompts
+// ============================================================================
+
+export const CAROUSEL_SYSTEM_PROMPT = `You are a producer translating a talking-head video script into a carousel brief for Instagram. The carousel will be 5-8 slides (cover + value beats + CTA). Your job is to produce a slide-by-slide brief that the user takes into Canva or Figma.
+
+The brief specifies content, not design. You provide:
+- Cover slide: a typographic hook (5-12 words, derived from the spoken hook)
+- Slides 2 through N-1: one beat per slide, with headline (5-10 words) and body (2-4 sentences)
+- Final slide: CTA matched to the carousel's chosen register
+
+Register options for carousels:
+- Textbook: pure utility, dense reference material, save-optimized
+- Friend in Textbook: vulnerable list ("things I learned the hard way about X")
+- Mirror in Textbook: relatable list ("things you'll recognize if you're a [X]")
+
+Output format (JSON):
+{
+  "cover_slide": {"headline": "string"},
+  "interior_slides": [{"slide_number": 1, "headline": "string", "body": "string"}],
+  "final_slide": {"cta": "string"},
+  "design_notes": "1-2 sentences on visual treatment matched to the register"
+}`;
+
+export const CAROUSEL_USER_PROMPT = `Translate this script into a carousel brief.
+
+Register chosen: {{register}}
+
+Source script:
+"""
+{{script}}
+"""
+
+Channel context:
+- Audience: {{audience}}
+- Channel: {{channel}}
+
+Produce 5-8 slides total. Use the script's actual content and word choices wherever possible — do not rewrite, translate. The carousel is the same idea in a different container.
+
+Respond with only the JSON object.`;
+
+export const CAPTION_REEL_SYSTEM_PROMPT = `You are a producer translating a talking-head video script into a caption reel brief. A caption reel is a silent-friendly video where text overlays carry the message and b-roll provides visual context. Length: 15-30 seconds, 3-8 text cards.
+
+Register options for caption reels:
+- Mirror: relatable POV scenario ("when you finally...")
+- Mirror with sharpened tension: contrarian observation that names a wrong common belief
+- Friend: vulnerable text-driven confessional
+
+Output format (JSON):
+{
+  "text_cards": [{"card_number": 1, "text": "string (4-12 words)", "duration_seconds": 3.0, "broll_suggestion": "string"}],
+  "music_recommendation": "string describing the kind of music bed",
+  "production_notes": "1-2 sentences on pacing and visual treatment"
+}`;
+
+export const CAPTION_REEL_USER_PROMPT = `Translate this script into a caption reel brief.
+
+Register chosen: {{register}}
+
+Source script:
+"""
+{{script}}
+"""
+
+Channel context:
+- Audience: {{audience}}
+- Channel: {{channel}}
+
+Each text card must be a complete thought that lands silently. No voiceover. Use the script's spine and key beats as the source material. Aim for 3-8 cards total.
+
+Respond with only the JSON object.`;
+
+export const VOICEOVER_SYSTEM_PROMPT = `You are a producer translating a talking-head video script into a voiceover-with-b-roll brief. The voice carries the message; b-roll provides visual support. Length: 30-60 seconds.
+
+Register options:
+- Friend (re-recorded VO): vulnerable, intimate register; voice is quieter, slower, more reflective; new audio recorded fresh
+- Professor extended (Interview Cut): VO sourced from the original talking-head shoot; declarative, authoritative register; existing audio reused
+
+Output format (JSON):
+{
+  "audio_script": "the script as the VO will deliver it (may be tightened from source)",
+  "broll_timeline": [{"timestamp_start": "0:00", "timestamp_end": "0:00", "broll_description": "string", "purpose": "string"}],
+  "pacing_notes": "1-2 sentences on rhythm",
+  "audio_treatment_notes": "1-2 sentences on register and recording approach"
+}`;
+
+export const VOICEOVER_USER_PROMPT = `Translate this script into a voiceover-with-b-roll brief.
+
+Register chosen: {{register}}
+
+Source script:
+"""
+{{script}}
+"""
+
+Channel context:
+- Audience: {{audience}}
+- Channel: {{channel}}
+
+For "Friend" register: tighten the script for a 30-45 second VO; recommend the vulnerable register treatment. For "Professor extended": preserve the script as-is for use as Interview Cut audio. In both cases, design a b-roll timeline that supports the audio without literalizing every word.
+
+Respond with only the JSON object.`;

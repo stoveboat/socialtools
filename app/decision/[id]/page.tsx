@@ -58,7 +58,7 @@ export default async function DecisionPage({
             description="Get a grade across 11 dimensions with specific evidence and repair recommendations. Takes about 30 seconds."
           />
           <DecisionCard
-            href={`/convert/${id}`}
+            href={`/convert/${id}/lite`}
             title="Convert into four formats"
             description="Derive carousel, caption reel, and voiceover-with-b-roll versions. Takes 5–10 minutes."
           />
