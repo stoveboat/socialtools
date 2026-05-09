@@ -4,11 +4,16 @@ import { runDiagnostic } from "@/lib/diagnostics/runDiagnostic";
 
 export const maxDuration = 90; // Vercel ceiling for the diagnostic call.
 
+type ScriptVersion = "source" | "refined";
+
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id: pieceId } = await params;
+  const body = await request.json().catch(() => ({}));
+  const scriptVersion: ScriptVersion =
+    body.script_version === "refined" ? "refined" : "source";
 
   const supabase = await createClient();
   const {
@@ -18,10 +23,9 @@ export async function POST(
     return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
   }
 
-  // Owner check + load script.
   const { data: piece, error: pieceError } = await supabase
     .from("pieces")
-    .select("id, source_script, user_id")
+    .select("id, source_script, refined_script, user_id")
     .eq("id", pieceId)
     .single();
   if (pieceError || !piece) {
@@ -31,21 +35,32 @@ export async function POST(
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
-  // Already-complete check: if a fully-graded diagnostic exists for the
-  // source script, return it instead of re-running.
+  const script =
+    scriptVersion === "refined" ? piece.refined_script : piece.source_script;
+  if (!script) {
+    return NextResponse.json(
+      { error: "script_missing", detail: `No ${scriptVersion} script` },
+      { status: 400 },
+    );
+  }
+
+  // If a fully-graded diagnostic for this script_version already exists,
+  // return it instead of re-running.
   const { data: existing } = await supabase
     .from("diagnostics")
     .select("id, dimension_grades(count)")
     .eq("piece_id", pieceId)
-    .eq("script_version", "source")
+    .eq("script_version", scriptVersion)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (existing && (existing.dimension_grades as { count: number }[])?.[0]?.count === 11) {
+  if (
+    existing &&
+    (existing.dimension_grades as { count: number }[])?.[0]?.count === 11
+  ) {
     return NextResponse.json({ diagnostic_id: existing.id, cached: true });
   }
 
-  // Resolve the user-confirmed Phase 0 context for this piece.
   const { data: ctx } = await supabase
     .from("phase_0_contexts")
     .select(
@@ -57,17 +72,9 @@ export async function POST(
   const channel = ctx?.custom_channel || ctx?.channel_selection || "Unknown";
   const traction = ctx?.custom_traction || ctx?.traction_selection || "Unknown";
 
-  // Run the diagnostic. Phase 0 inference re-runs here so the grader can use
-  // the topic summary even if the saved one is stale; the user's confirmed
-  // audience/channel/traction overrides remain in force.
   let report;
   try {
-    report = await runDiagnostic({
-      script: piece.source_script,
-      audience,
-      channel,
-      traction,
-    });
+    report = await runDiagnostic({ script, audience, channel, traction });
   } catch (err) {
     return NextResponse.json(
       { error: "grading_failed", detail: (err as Error).message },
@@ -75,12 +82,11 @@ export async function POST(
     );
   }
 
-  // Persist the diagnostic header.
   const { data: diag, error: diagError } = await supabase
     .from("diagnostics")
     .insert({
       piece_id: pieceId,
-      script_version: "source",
+      script_version: scriptVersion,
       routing_recommendation: report.routing_recommendation,
       overall_label: report.overall_label,
     })
@@ -93,7 +99,6 @@ export async function POST(
     );
   }
 
-  // Persist the dimension grades.
   const { error: gradesError } = await supabase.from("dimension_grades").insert(
     report.dimension_grades.map((g) => ({
       diagnostic_id: diag.id,
@@ -111,11 +116,10 @@ export async function POST(
     );
   }
 
-  // Advance the piece phase.
   await supabase
     .from("pieces")
     .update({
-      current_phase: "phase_1",
+      current_phase: scriptVersion === "refined" ? "phase_3" : "phase_1",
       updated_at: new Date().toISOString(),
     })
     .eq("id", pieceId);

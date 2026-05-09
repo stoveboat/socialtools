@@ -14,6 +14,13 @@ export interface LoadedDiagnostic {
 export async function loadLatestSourceDiagnostic(
   pieceId: string,
 ): Promise<LoadedDiagnostic | null> {
+  return loadLatestDiagnostic(pieceId, "source");
+}
+
+export async function loadLatestDiagnostic(
+  pieceId: string,
+  scriptVersion: string,
+): Promise<LoadedDiagnostic | null> {
   const supabase = await createClient();
   const { data: diag } = await supabase
     .from("diagnostics")
@@ -21,7 +28,7 @@ export async function loadLatestSourceDiagnostic(
       "id, piece_id, script_version, routing_recommendation, overall_label, created_at",
     )
     .eq("piece_id", pieceId)
-    .eq("script_version", "source")
+    .eq("script_version", scriptVersion)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
