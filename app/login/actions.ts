@@ -21,7 +21,7 @@ export async function signupWithPassword(formData: FormData) {
   const password = String(formData.get("password") ?? "");
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signUp({
+  const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
@@ -31,6 +31,12 @@ export async function signupWithPassword(formData: FormData) {
 
   if (error) {
     redirect(`/signup?error=${encodeURIComponent(error.message)}`);
+  }
+  // When email confirmation is off, signUp returns a live session and the
+  // user is already authenticated. Otherwise we wait for them to click the
+  // confirmation link.
+  if (data.session) {
+    redirect("/");
   }
   redirect("/signup?check_email=1");
 }

@@ -32,7 +32,7 @@ export default async function Home() {
           </h1>
           <p className="text-muted-foreground">
             {user
-              ? "You are signed in. Auth, database schema, and the Anthropic SDK are wired. The product surface comes in subsequent build steps."
+              ? "You are signed in. Auth, database schema, and the DeepSeek client are wired. The product surface comes in subsequent build steps."
               : "Sign in or create an account to verify auth. Then continue with Step 2 of the build sequence."}
           </p>
         </div>
