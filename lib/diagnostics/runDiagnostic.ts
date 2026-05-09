@@ -17,49 +17,53 @@ export interface RunDiagnosticOptions {
   onPhase0Complete?: (context: ChannelContext) => void;
 }
 
-const FOUNDATION_DIMENSIONS = new Set([
+// Foundation vs execution split per 02_architecture.md.
+const FOUNDATION_DIMENSIONS = new Set<DimensionGrade["dimension_id"]>([
   "spine",
   "audience",
   "tension",
   "payoff",
+  "authority",
 ]);
 
-function gradeRank(grade: string): number {
-  return { A: 4, B: 3, C: 2, D: 1, F: 0 }[grade] ?? 0;
+function isWeak(grade: DimensionGrade): boolean {
+  return grade.grade === "C" || grade.grade === "D" || grade.grade === "F";
 }
 
+// Routing rules from 02_architecture.md, evaluated top-to-bottom (first match
+// wins):
+// 1. Ready to Ship  - all grades B or above.
+// 2. Back to Phase 0 - 3+ weak foundation grades, OR Spine specifically at F.
+// 3. Skeleton Mode  - 1-2 weak foundation grades, OR foundation sound but 5+
+//                     execution dimensions weak.
+// 4. Surgical Repair - foundation sound, 4 or fewer execution weak.
 function classify(grades: DimensionGrade[]): {
   overall: OverallLabel;
   routing: RoutingRecommendation;
 } {
-  const foundationGrades = grades.filter((g) =>
+  const foundation = grades.filter((g) =>
     FOUNDATION_DIMENSIONS.has(g.dimension_id),
   );
-  const failingFoundations = foundationGrades.filter(
-    (g) => g.grade === "D" || g.grade === "F",
+  const execution = grades.filter(
+    (g) => !FOUNDATION_DIMENSIONS.has(g.dimension_id),
   );
-  const weakAny = grades.filter((g) => g.grade === "D" || g.grade === "F");
-  const polishOrBetter = grades.filter((g) => gradeRank(g.grade) >= 3);
+  const weakFoundation = foundation.filter(isWeak);
+  const weakExecution = execution.filter(isWeak);
+  const spineGrade = grades.find((g) => g.dimension_id === "spine")?.grade;
 
-  // Routing rules:
-  // - 2+ foundation dimensions failing -> skeleton mode
-  // - off_positioning failing badly -> back_to_phase_0
-  // - 0 weak dimensions and 8+ A/B grades -> ready_to_ship
-  // - otherwise -> surgical_repair
-  if (failingFoundations.length >= 2) {
-    return { overall: "Needs Work", routing: "skeleton_mode" };
-  }
-  const offPos = grades.find((g) => g.dimension_id === "off_positioning");
-  if (offPos && offPos.grade === "F") {
-    return { overall: "Needs Work", routing: "back_to_phase_0" };
-  }
-  if (weakAny.length === 0 && polishOrBetter.length >= 8) {
+  if (weakFoundation.length === 0 && weakExecution.length === 0) {
     return { overall: "Strong", routing: "ready_to_ship" };
   }
-  return {
-    overall: weakAny.length >= 4 ? "Needs Work" : "Mixed",
-    routing: "surgical_repair",
-  };
+  if (weakFoundation.length >= 3 || spineGrade === "F") {
+    return { overall: "Needs Work", routing: "back_to_phase_0" };
+  }
+  if (
+    weakFoundation.length >= 1 ||
+    (weakFoundation.length === 0 && weakExecution.length >= 5)
+  ) {
+    return { overall: "Needs Work", routing: "skeleton_mode" };
+  }
+  return { overall: "Mixed", routing: "surgical_repair" };
 }
 
 function countWords(text: string): number {
