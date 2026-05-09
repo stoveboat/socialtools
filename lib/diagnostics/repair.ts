@@ -105,80 +105,59 @@ export async function generateFixCandidates(
 }
 
 // ============================================================================
-// Edit application — converts accepted repair_choices into a refined script
-// by string-replacing each choice's original_sentences with its replacement.
+// Edit application — apply a single repair to the current script state. The
+// refined script is the running state; each accepted fix mutates it
+// immediately so the next dimension's candidates are generated against an
+// up-to-date draft.
 // ============================================================================
-
-export interface AppliedEdit {
-  dimension_id: string;
-  original: string;
-  replacement: string;
-  applied: boolean;
-  reason?: string;
-}
-
-export interface RepairChoiceForApply {
-  dimension_id: string;
-  status: string;
-  original_sentences: string[] | null;
-  replacement_sentences: string[] | null;
-  user_edited_replacement: string | null;
-}
 
 function joinSentences(parts: string[]): string {
   return parts.join(" ").trim();
 }
 
-export function applyAcceptedEdits(
+export interface ApplyResult {
+  applied: boolean;
+  refined: string;
+  reason?: string;
+}
+
+export function applyOneEdit(
   source: string,
-  choices: RepairChoiceForApply[],
-): { refined: string; edits: AppliedEdit[] } {
-  let working = source;
-  const edits: AppliedEdit[] = [];
+  originalSentences: string[],
+  replacement: string,
+): ApplyResult {
+  if (originalSentences.length === 0) {
+    return { applied: false, refined: source, reason: "no original sentences" };
+  }
+  const original = joinSentences(originalSentences);
 
-  for (const c of choices) {
-    if (c.status !== "accepted" && c.status !== "edited") continue;
-    if (!c.original_sentences || c.original_sentences.length === 0) continue;
-
-    const original = joinSentences(c.original_sentences);
-    const replacement =
-      c.status === "edited" && c.user_edited_replacement
-        ? c.user_edited_replacement
-        : joinSentences(c.replacement_sentences ?? []);
-
-    const idx = working.indexOf(original);
-    if (idx === -1) {
-      // Fallback: try matching the first sentence only — model may have
-      // joined sentences differently than the source uses.
-      const firstSentence = c.original_sentences[0];
-      const altIdx = working.indexOf(firstSentence);
-      if (altIdx === -1) {
-        edits.push({
-          dimension_id: c.dimension_id,
-          original,
-          replacement,
-          applied: false,
-          reason: "original sentence(s) not found in current script",
-        });
-        continue;
-      }
-      working =
-        working.slice(0, altIdx) +
-        replacement +
-        working.slice(altIdx + firstSentence.length);
-    } else {
-      working =
-        working.slice(0, idx) +
-        replacement +
-        working.slice(idx + original.length);
-    }
-    edits.push({
-      dimension_id: c.dimension_id,
-      original,
-      replacement,
+  const idx = source.indexOf(original);
+  if (idx !== -1) {
+    return {
       applied: true,
-    });
+      refined:
+        source.slice(0, idx) + replacement + source.slice(idx + original.length),
+    };
   }
 
-  return { refined: working, edits };
+  // Fallback: try matching the first sentence only — the model may have
+  // joined sentences differently than the source uses.
+  const firstSentence = originalSentences[0];
+  const altIdx = source.indexOf(firstSentence);
+  if (altIdx !== -1) {
+    return {
+      applied: true,
+      refined:
+        source.slice(0, altIdx) +
+        replacement +
+        source.slice(altIdx + firstSentence.length),
+    };
+  }
+
+  return {
+    applied: false,
+    refined: source,
+    reason:
+      "Could not locate the original sentence(s) in the current script. The script has likely been changed by a prior fix in a way that removed this passage.",
+  };
 }

@@ -1,34 +1,57 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Textarea } from "@/components/ui/textarea";
+import { GradeBadge } from "@/components/grade-badge";
 import type { FixCandidate } from "@/lib/diagnostics/repair";
+import type { DimensionGrade, Grade } from "@/lib/diagnostics/types";
+
+interface AutoResolved {
+  dimension_id: string;
+  dimension_name: string;
+  new_grade: string;
+}
 
 interface RepairCardProps {
   diagnosticId: string;
+  pieceId: string;
   dimensionId: string;
-  nextHref: string;
-  preExisting?: { description: string };
+  dimensionName: string;
 }
+
+type LoadState =
+  | { kind: "loading" }
+  | { kind: "auto_resolved"; freshGrade: DimensionGrade }
+  | { kind: "ready"; freshGrade: DimensionGrade; candidates: FixCandidate[] }
+  | { kind: "error"; message: string };
 
 export function RepairCard({
   diagnosticId,
+  pieceId,
   dimensionId,
-  nextHref,
-  preExisting,
+  dimensionName,
 }: RepairCardProps) {
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
-  const [candidates, setCandidates] = useState<FixCandidate[]>([]);
+  const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [selectedIdx, setSelectedIdx] = useState<string>("");
-  const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [editedReplacement, setEditedReplacement] = useState<string>("");
+  const [edited, setEdited] = useState(false);
+  const [submitState, setSubmitState] = useState<
+    | { kind: "idle" }
+    | { kind: "submitting" }
+    | { kind: "applying" }
+    | { kind: "error"; message: string }
+  >({ kind: "idle" });
+  const startedRef = useRef(false);
 
+  // Load candidates on mount.
   useEffect(() => {
-    let cancelled = false;
+    if (startedRef.current) return;
+    startedRef.current = true;
     (async () => {
       try {
         const res = await fetch(
@@ -40,29 +63,60 @@ export function RepairCard({
           throw new Error(body.detail || body.error || `HTTP ${res.status}`);
         }
         const data = await res.json();
-        if (cancelled) return;
-        setCandidates(data.candidates);
+        if (data.auto_resolved) {
+          setState({ kind: "auto_resolved", freshGrade: data.fresh_grade });
+        } else {
+          setState({
+            kind: "ready",
+            freshGrade: data.fresh_grade,
+            candidates: data.candidates,
+          });
+        }
       } catch (err) {
-        if (!cancelled) setError((err as Error).message);
-      } finally {
-        if (!cancelled) setLoading(false);
+        setState({ kind: "error", message: (err as Error).message });
       }
     })();
-    return () => {
-      cancelled = true;
-    };
   }, [diagnosticId, dimensionId]);
 
-  const submit = async (action: "pick" | "skip") => {
-    setSubmitting(true);
-    setError(null);
+  // When user picks a candidate, prime the edit textarea with the proposed
+  // replacement so they can tweak it before applying.
+  useEffect(() => {
+    if (state.kind !== "ready") return;
+    if (selectedIdx === "") return;
+    const cand = state.candidates[Number(selectedIdx)];
+    if (!cand) return;
+    if (!edited) {
+      setEditedReplacement(cand.replacement_sentences.join(" "));
+    }
+  }, [selectedIdx, state, edited]);
+
+  // Auto-resolved state: kick the user forward to the next remaining card or
+  // to /review. The entry route handles the routing.
+  useEffect(() => {
+    if (state.kind === "auto_resolved") {
+      const t = setTimeout(() => {
+        router.replace(`/repair/${diagnosticId}`);
+      }, 1500);
+      return () => clearTimeout(t);
+    }
+  }, [state, router, diagnosticId]);
+
+  const submit = async (action: "apply" | "skip") => {
+    setSubmitState({ kind: "submitting" });
+    const body =
+      action === "skip"
+        ? { skipped: true }
+        : {
+            candidate:
+              state.kind === "ready"
+                ? state.candidates[Number(selectedIdx)]
+                : undefined,
+            edited_replacement: edited ? editedReplacement : undefined,
+          };
     try {
-      const body =
-        action === "skip"
-          ? { skipped: true }
-          : { candidate: candidates[Number(selectedIdx)] };
+      setSubmitState({ kind: "applying" });
       const res = await fetch(
-        `/api/repair/${diagnosticId}/${dimensionId}/choice`,
+        `/api/repair/${diagnosticId}/${dimensionId}/apply`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -70,55 +124,95 @@ export function RepairCard({
         },
       );
       if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}));
-        throw new Error(
-          errBody.detail || errBody.error || `HTTP ${res.status}`,
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || body.error || `HTTP ${res.status}`);
+      }
+      const data = (await res.json()) as {
+        done: boolean;
+        next_dimension_id: string | null;
+        auto_resolved: AutoResolved[];
+      };
+      const resolvedParam =
+        data.auto_resolved.length > 0
+          ? `?resolved=${encodeURIComponent(
+              data.auto_resolved.map((r) => r.dimension_name).join("|"),
+            )}&from=${encodeURIComponent(dimensionName)}`
+          : "";
+      if (data.done || !data.next_dimension_id) {
+        router.replace(`/repair/${diagnosticId}/review${resolvedParam}`);
+      } else {
+        router.replace(
+          `/repair/${diagnosticId}/${data.next_dimension_id}${resolvedParam}`,
         );
       }
-      router.push(nextHref);
     } catch (err) {
-      setError((err as Error).message);
-      setSubmitting(false);
+      setSubmitState({ kind: "error", message: (err as Error).message });
     }
   };
 
-  if (loading) {
+  if (state.kind === "loading") {
     return (
       <div className="flex flex-col items-center gap-3 py-12 text-center">
         <div className="h-8 w-8 rounded-full border-2 border-foreground/20 border-t-foreground animate-spin" />
         <p className="text-sm text-muted-foreground">
-          Generating fix candidates...
+          Diagnosing the latest version of your script and proposing fixes...
         </p>
       </div>
     );
   }
 
-  if (error && candidates.length === 0) {
+  if (state.kind === "auto_resolved") {
+    return (
+      <div className="rounded-md border bg-emerald-50 border-emerald-300 p-5 space-y-2">
+        <p className="text-sm font-medium text-emerald-900">
+          Already resolved — graded {state.freshGrade.grade} now.
+        </p>
+        <p className="text-sm text-emerald-900/80">
+          A previous fix appears to have addressed this dimension. Skipping
+          ahead.
+        </p>
+      </div>
+    );
+  }
+
+  if (state.kind === "error") {
     return (
       <p
         role="alert"
         className="text-sm rounded-md bg-red-50 text-red-900 px-3 py-2"
       >
-        {error}
+        {state.message}
       </p>
     );
   }
 
+  // ready
+  const fresh = state.freshGrade;
+  const selected = selectedIdx !== "" ? state.candidates[Number(selectedIdx)] : undefined;
+
   return (
     <div className="space-y-5">
-      {preExisting ? (
-        <p className="text-xs rounded-md bg-emerald-50 text-emerald-900 px-3 py-2">
-          You already picked: <strong>{preExisting.description}</strong>.
-          Picking again will replace the previous choice.
-        </p>
-      ) : null}
+      <div className="rounded-md border p-4 space-y-2">
+        <div className="flex items-center gap-3">
+          <GradeBadge grade={fresh.grade as Grade} />
+          <p className="text-sm font-medium">
+            Fresh read: {fresh.dimension_name} graded {fresh.grade}
+          </p>
+        </div>
+        <blockquote className="border-l-2 pl-3 text-sm leading-relaxed text-muted-foreground">
+          {fresh.evidence}
+        </blockquote>
+      </div>
 
       <RadioGroup
         value={selectedIdx}
-        onValueChange={setSelectedIdx}
+        onValueChange={(v) => {
+          setSelectedIdx(v);
+          setEdited(false);
+        }}
         className="space-y-3"
       >
-        {candidates.map((c, i) => (
+        {state.candidates.map((c, i) => (
           <Label
             key={i}
             htmlFor={`candidate-${i}`}
@@ -146,30 +240,81 @@ export function RepairCard({
         ))}
       </RadioGroup>
 
-      {error ? (
+      {selected ? (
+        <div className="rounded-md border bg-muted/20 p-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-medium">
+              {edited
+                ? "You're editing the replacement"
+                : "Replacement (you can edit before applying)"}
+            </p>
+            {edited ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setEdited(false);
+                  setEditedReplacement(selected.replacement_sentences.join(" "));
+                }}
+                className="text-xs underline text-muted-foreground"
+              >
+                Reset to original suggestion
+              </button>
+            ) : null}
+          </div>
+          <Textarea
+            rows={4}
+            value={editedReplacement}
+            onChange={(e) => {
+              setEditedReplacement(e.target.value);
+              setEdited(true);
+            }}
+            className="bg-background"
+          />
+        </div>
+      ) : null}
+
+      {submitState.kind === "error" ? (
         <p
           role="alert"
           className="text-sm rounded-md bg-red-50 text-red-900 px-3 py-2"
         >
-          {error}
+          {submitState.message}
         </p>
+      ) : null}
+
+      {submitState.kind === "applying" ? (
+        <div className="rounded-md border bg-muted/40 p-4 flex items-center gap-3">
+          <div className="h-4 w-4 rounded-full border-2 border-foreground/20 border-t-foreground animate-spin" />
+          <p className="text-sm text-muted-foreground">
+            Applying the fix and checking the remaining dimensions...
+          </p>
+        </div>
       ) : null}
 
       <div className="flex flex-wrap gap-3">
         <Button
-          onClick={() => submit("pick")}
-          disabled={selectedIdx === "" || submitting}
+          onClick={() => submit("apply")}
+          disabled={
+            !selected ||
+            submitState.kind === "submitting" ||
+            submitState.kind === "applying"
+          }
         >
-          {submitting ? "Saving..." : "Pick this fix"}
+          {submitState.kind === "applying" ? "Applying..." : "Apply this fix"}
         </Button>
         <Button
           variant="outline"
           onClick={() => submit("skip")}
-          disabled={submitting}
+          disabled={
+            submitState.kind === "submitting" || submitState.kind === "applying"
+          }
         >
           Skip this dimension
         </Button>
       </div>
+      {/* pieceId is currently unused in the card UI but reserved for future
+          back-link affordances; reference it to keep the prop typed. */}
+      <span className="hidden">{pieceId}</span>
     </div>
   );
 }

@@ -1,12 +1,10 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { SiteHeader } from "@/components/header";
-import { GradeBadge } from "@/components/grade-badge";
-import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
 import { loadDiagnosticOwner } from "@/lib/db/repair";
 import { DIMENSION_RATIONALE } from "@/lib/diagnostics/dimension-rationale";
-import type { DimensionId, Grade } from "@/lib/diagnostics/types";
+import type { DimensionId } from "@/lib/diagnostics/types";
 import { RepairCard } from "./repair-card";
 
 const DIMENSION_ORDER = [
@@ -27,10 +25,13 @@ const isWeak = (g: string) => g === "C" || g === "D" || g === "F";
 
 export default async function RepairCardPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ diagnosticId: string; dimensionId: string }>;
+  searchParams: Promise<{ resolved?: string; from?: string }>;
 }) {
   const { diagnosticId, dimensionId } = await params;
+  const { resolved, from } = await searchParams;
 
   const supabase = await createClient();
   const {
@@ -44,36 +45,23 @@ export default async function RepairCardPage({
 
   const { data: thisDim } = await supabase
     .from("dimension_grades")
-    .select("dimension_id, dimension_name, grade, evidence")
+    .select("dimension_id, dimension_name")
     .eq("diagnostic_id", diagnosticId)
     .eq("dimension_id", dimensionId)
     .single();
   if (!thisDim) notFound();
 
+  // Determine the user's position in the queue. Queue = initial weak dims
+  // that don't yet have a repair_choice. We surface the position of the
+  // current dim plus the total queue length for the "[N] of [M]" indicator.
   const { data: rows } = await supabase
     .from("dimension_grades")
     .select("dimension_id, grade")
     .eq("diagnostic_id", diagnosticId);
-  const weakSequence = (rows ?? [])
+  const initialWeak = (rows ?? [])
     .filter((r) => isWeak(r.grade))
-    .sort(
-      (a, b) =>
-        DIMENSION_ORDER.indexOf(a.dimension_id) -
-        DIMENSION_ORDER.indexOf(b.dimension_id),
-    );
-  const currentIdx = weakSequence.findIndex(
-    (r) => r.dimension_id === dimensionId,
-  );
-  const total = weakSequence.length;
-  const positionLabel = currentIdx >= 0 ? currentIdx + 1 : 1;
-  const previous = currentIdx > 0 ? weakSequence[currentIdx - 1] : null;
-  const isLast = currentIdx === total - 1 || total === 0;
-  const next = !isLast && currentIdx >= 0 ? weakSequence[currentIdx + 1] : null;
-  const nextHref = next
-    ? `/repair/${diagnosticId}/${next.dimension_id}`
-    : `/repair/${diagnosticId}/rewrite`;
+    .map((r) => r.dimension_id);
 
-  // Pre-existing choice (if user has been here before).
   const { data: planRow } = await supabase
     .from("repair_plans")
     .select("id")
@@ -82,23 +70,33 @@ export default async function RepairCardPage({
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  let preExisting: { description: string } | undefined;
+
+  let addressed = new Set<string>();
   if (planRow) {
-    const { data: choice } = await supabase
+    const { data: choices } = await supabase
       .from("repair_choices")
-      .select("chosen_fix, status")
-      .eq("repair_plan_id", planRow.id)
-      .eq("dimension_id", dimensionId)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (choice && choice.status !== "skipped") {
-      preExisting = { description: choice.chosen_fix };
-    }
+      .select("dimension_id")
+      .eq("repair_plan_id", planRow.id);
+    addressed = new Set((choices ?? []).map((c) => c.dimension_id));
   }
+  // The current dim is "in the queue" even if a repair_choice already exists
+  // (the user revisited it).
+  addressed.delete(dimensionId);
+
+  const queue = initialWeak
+    .filter((id) => !addressed.has(id))
+    .sort(
+      (a, b) => DIMENSION_ORDER.indexOf(a) - DIMENSION_ORDER.indexOf(b),
+    );
+  const positionLabel = queue.indexOf(dimensionId) + 1;
+  const total = queue.length;
 
   const rationale =
     DIMENSION_RATIONALE[thisDim.dimension_id as DimensionId] ?? "";
+
+  const resolvedNames = resolved
+    ? resolved.split("|").map((s) => s.trim()).filter(Boolean)
+    : [];
 
   return (
     <div className="min-h-svh flex flex-col">
@@ -111,20 +109,25 @@ export default async function RepairCardPage({
           ← Back to summary
         </Link>
 
+        {resolvedNames.length > 0 ? (
+          <div className="rounded-md border bg-emerald-50 border-emerald-300 px-4 py-3 text-sm text-emerald-900">
+            {from ? (
+              <>
+                Fixing <strong>{from}</strong> also resolved{" "}
+                {formatList(resolvedNames)}. Skipping{" "}
+                {resolvedNames.length === 1 ? "it" : "them"}.
+              </>
+            ) : (
+              <>
+                Resolved on the side: {formatList(resolvedNames)}.
+              </>
+            )}
+          </div>
+        ) : null}
+
         <div className="grid gap-8 lg:grid-cols-[2fr_3fr]">
           <aside className="space-y-4">
-            <div className="flex items-center gap-3">
-              <GradeBadge grade={thisDim.grade as Grade} />
-              <h1 className="text-xl font-semibold">{thisDim.dimension_name}</h1>
-            </div>
-            <div className="space-y-2">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                Diagnostic evidence
-              </p>
-              <blockquote className="border-l-2 pl-3 text-sm leading-relaxed text-muted-foreground">
-                {thisDim.evidence}
-              </blockquote>
-            </div>
+            <h1 className="text-xl font-semibold">{thisDim.dimension_name}</h1>
             {rationale ? (
               <div className="space-y-2">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">
@@ -133,48 +136,42 @@ export default async function RepairCardPage({
                 <p className="text-sm leading-relaxed">{rationale}</p>
               </div>
             ) : null}
+            <p className="text-xs text-muted-foreground border-t pt-3">
+              The grader re-reads the latest version of your script for each
+              card, so what shows up here is always against the current draft —
+              not the original diagnostic.
+            </p>
           </aside>
 
           <section className="space-y-5">
             <header>
               <h2 className="text-lg font-semibold">Pick a fix</h2>
               <p className="text-sm text-muted-foreground">
-                Two to four targeted options. Each one shows the exact text
-                that would change.
+                Two to four targeted options against the current draft. Edit
+                the replacement before applying if the wording isn't quite
+                right.
               </p>
             </header>
 
             <RepairCard
               diagnosticId={diagnosticId}
+              pieceId={owner.piece_id}
               dimensionId={dimensionId}
-              nextHref={nextHref}
-              preExisting={preExisting}
+              dimensionName={thisDim.dimension_name}
             />
 
-            <div className="flex items-center justify-between border-t pt-4 text-sm">
-              <div className="text-muted-foreground">
-                {positionLabel} of {total}
-              </div>
-              <div className="flex gap-3">
-                {previous ? (
-                  <Link
-                    href={`/repair/${diagnosticId}/${previous.dimension_id}`}
-                  >
-                    <Button variant="outline" size="sm">
-                      Previous
-                    </Button>
-                  </Link>
-                ) : null}
-                <Link href={nextHref}>
-                  <Button variant="outline" size="sm">
-                    {isLast ? "Review edits" : "Next"}
-                  </Button>
-                </Link>
-              </div>
-            </div>
+            <p className="border-t pt-4 text-sm text-muted-foreground">
+              {total > 0 ? `${positionLabel} of ${total} remaining` : ""}
+            </p>
           </section>
         </div>
       </main>
     </div>
   );
+}
+
+function formatList(items: string[]): string {
+  if (items.length === 1) return items[0];
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
 }

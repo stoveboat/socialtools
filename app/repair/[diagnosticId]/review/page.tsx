@@ -12,10 +12,17 @@ import { Comparison, type CompareGrade } from "./comparison";
 
 export default async function ReviewPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ diagnosticId: string }>;
+  searchParams: Promise<{ resolved?: string; from?: string }>;
 }) {
   const { diagnosticId } = await params;
+  const sp = await searchParams;
+  const resolvedNames = sp.resolved
+    ? sp.resolved.split("|").map((s) => s.trim()).filter(Boolean)
+    : [];
+  const fromName = sp.from ?? "";
 
   const supabase = await createClient();
   const {
@@ -67,10 +74,10 @@ export default async function ReviewPage({
       <SiteHeader />
       <main className="flex-1 px-6 py-10 max-w-6xl mx-auto w-full space-y-6">
         <Link
-          href={`/repair/${diagnosticId}/rewrite`}
+          href={`/diagnostic/${owner.piece_id}/summary`}
           className="text-sm underline text-muted-foreground inline-block"
         >
-          ← Back to rewrite
+          ← Back to summary
         </Link>
 
         <header className="space-y-1">
@@ -82,6 +89,20 @@ export default async function ReviewPage({
             shifted.
           </p>
         </header>
+
+        {resolvedNames.length > 0 ? (
+          <div className="rounded-md border bg-emerald-50 border-emerald-300 px-4 py-3 text-sm text-emerald-900">
+            {fromName ? (
+              <>
+                Your fixes resolved more than expected. Fixing{" "}
+                <strong>{fromName}</strong> also took care of{" "}
+                {formatList(resolvedNames)}.
+              </>
+            ) : (
+              <>You're done — all queued dimensions are no longer weak.</>
+            )}
+          </div>
+        ) : null}
 
         <div className="grid gap-6 lg:grid-cols-2">
           <section className="space-y-2">
@@ -112,4 +133,10 @@ export default async function ReviewPage({
       </main>
     </div>
   );
+}
+
+function formatList(items: string[]): string {
+  if (items.length === 1) return items[0];
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
 }
