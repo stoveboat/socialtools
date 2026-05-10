@@ -1,19 +1,21 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import {
-  applyOneEdit,
-  type FixCandidate,
-} from "@/lib/diagnostics/repair";
 import { gradeDimension } from "@/lib/diagnostics/grade";
 import { DIMENSION_PROMPTS } from "@/lib/diagnostics/prompts";
+import { type PassId } from "@/lib/diagnostics/passes";
 import type { ChannelContext, DimensionGrade } from "@/lib/diagnostics/types";
-import { computeQueue } from "@/lib/diagnostics/repair-order";
 import {
   getOrCreateRepairPlan,
   loadDiagnosticOwner,
 } from "@/lib/db/repair";
 
-export const maxDuration = 90;
+export const maxDuration = 120;
+
+const VALID_PASSES = new Set<PassId>([
+  "foundation",
+  "engagement_structure",
+  "surface",
+]);
 
 const isWeak = (g: string) => g === "C" || g === "D" || g === "F";
 
@@ -58,21 +60,21 @@ export async function POST(
   {
     params,
   }: {
-    params: Promise<{ diagnosticId: string; dimensionId: string }>;
+    params: Promise<{ diagnosticId: string; passId: string }>;
   },
 ) {
-  const { diagnosticId, dimensionId } = await params;
+  const { diagnosticId, passId } = await params;
+  if (!VALID_PASSES.has(passId as PassId)) {
+    return NextResponse.json({ error: "unknown_pass" }, { status: 400 });
+  }
   const body = await request.json().catch(() => ({}));
-  const skipped = body.skipped === true;
-  const candidate = body.candidate as FixCandidate | undefined;
-  const editedReplacement: string | undefined =
-    typeof body.edited_replacement === "string"
-      ? body.edited_replacement
-      : undefined;
-
-  if (!skipped && (!candidate || !Array.isArray(candidate.original_sentences))) {
+  const revisedScript =
+    typeof body.revised_script === "string"
+      ? body.revised_script.trim()
+      : "";
+  if (!revisedScript) {
     return NextResponse.json(
-      { error: "must_provide_candidate_or_skipped" },
+      { error: "revised_script_required" },
       { status: 400 },
     );
   }
@@ -84,112 +86,50 @@ export async function POST(
   if (!user) {
     return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
   }
-
   const owner = await loadDiagnosticOwner(diagnosticId, user.id);
   if (!owner) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
+  // Save the revision as the new running draft.
+  const { error: updateError } = await supabase
+    .from("pieces")
+    .update({
+      refined_script: revisedScript,
+      current_phase: "phase_3",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", owner.piece_id);
+  if (updateError) {
+    return NextResponse.json(
+      { error: "save_failed", detail: updateError.message },
+      { status: 500 },
+    );
+  }
+
+  // Record the pass acceptance against the repair plan. repair_choices is
+  // repurposed here: one row per accepted pass, with chosen_fix carrying the
+  // pass id and the directional choices serialized in user_edited_replacement
+  // for audit. Schema migration is unnecessary for v1.
   const { plan_id } = await getOrCreateRepairPlan(
     owner.piece_id,
     diagnosticId,
   );
+  await supabase.from("repair_choices").insert({
+    repair_plan_id: plan_id,
+    dimension_id: passId, // pass id stored in dimension_id slot
+    chosen_fix: `Pass accepted: ${passId}`,
+    status: "accepted",
+    user_edited_replacement:
+      typeof body.directional_choices === "string"
+        ? body.directional_choices
+        : null,
+    applied_at: new Date().toISOString(),
+  });
 
-  const { data: piece } = await supabase
-    .from("pieces")
-    .select("source_script, refined_script")
-    .eq("id", owner.piece_id)
-    .single();
-  if (!piece) {
-    return NextResponse.json({ error: "piece_missing" }, { status: 404 });
-  }
-  const currentScript = piece.refined_script ?? piece.source_script;
-
-  // Replace any existing choice for this dimension - the user may have
-  // revisited and changed their mind.
-  await supabase
-    .from("repair_choices")
-    .delete()
-    .eq("repair_plan_id", plan_id)
-    .eq("dimension_id", dimensionId);
-
-  let nextScript = currentScript;
-  if (skipped) {
-    await supabase.from("repair_choices").insert({
-      repair_plan_id: plan_id,
-      dimension_id: dimensionId,
-      chosen_fix: "Skipped",
-      status: "skipped",
-    });
-  } else {
-    const replacementText = editedReplacement
-      ? editedReplacement
-      : candidate!.replacement_sentences.join(" ");
-    const result = applyOneEdit(
-      currentScript,
-      candidate!.original_sentences,
-      replacementText,
-    );
-    if (!result.applied) {
-      return NextResponse.json(
-        { error: "edit_did_not_match", detail: result.reason },
-        { status: 409 },
-      );
-    }
-    nextScript = result.refined;
-
-    await supabase.from("repair_choices").insert({
-      repair_plan_id: plan_id,
-      dimension_id: dimensionId,
-      chosen_fix: candidate!.description,
-      status: editedReplacement ? "edited" : "accepted",
-      original_sentences: candidate!.original_sentences,
-      replacement_sentences: candidate!.replacement_sentences,
-      user_edited_replacement: editedReplacement ?? null,
-      applied_at: new Date().toISOString(),
-    });
-
-    await supabase
-      .from("pieces")
-      .update({
-        refined_script: nextScript,
-        current_phase: "phase_3",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", owner.piece_id);
-  }
-
-  // For a skip with no script change, re-grading is wasted work — return the
-  // queue from the latest persisted diagnostic.
-  if (skipped) {
-    const { data: latestRefined } = await supabase
-      .from("diagnostics")
-      .select("id")
-      .eq("piece_id", owner.piece_id)
-      .eq("script_version", "refined")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    const latestId = latestRefined?.id ?? diagnosticId;
-    const { data: latestGrades } = await supabase
-      .from("dimension_grades")
-      .select("dimension_id, grade")
-      .eq("diagnostic_id", latestId);
-    const { data: choices } = await supabase
-      .from("repair_choices")
-      .select("dimension_id")
-      .eq("repair_plan_id", plan_id);
-    const addressed = new Set((choices ?? []).map((r) => r.dimension_id));
-    const queue = computeQueue(latestGrades ?? [], addressed);
-    return NextResponse.json({
-      done: queue.length === 0,
-      next_dimension_id: queue[0]?.dimension_id ?? null,
-    });
-  }
-
-  // Apply landed - re-grade ALL 11 dimensions in parallel against the new
-  // draft so the user sees the full impact of their fix, including
-  // dimensions that weren't in the original queue.
+  // Re-run the full eleven-dimension diagnostic against the new draft so the
+  // Summary reflects post-pass state and the next-pass recommendation is
+  // computed against fresh grades.
   const { data: ctx } = await supabase
     .from("phase_0_contexts")
     .select(
@@ -203,9 +143,8 @@ export async function POST(
     traction: ctx?.custom_traction || ctx?.traction_selection || "Unknown",
     topic_summary: ctx?.topic_summary || "",
   };
-
   const vars = {
-    script: nextScript,
+    script: revisedScript,
     audience: context.audience,
     channel: context.channel,
     traction: context.traction,
@@ -219,15 +158,17 @@ export async function POST(
     );
   } catch (err) {
     return NextResponse.json(
-      { error: "regrade_failed", detail: (err as Error).message },
+      {
+        error: "regrade_failed",
+        detail: (err as Error).message,
+        partial: { saved: true },
+      },
       { status: 500 },
     );
   }
-
   const { overall, routing } = classifyOverall(regraded);
 
-  // Replace the refined diagnostic in place. If one doesn't exist yet, create
-  // it; otherwise update its row and replace its dimension_grades.
+  // Replace the refined diagnostic in place.
   const { data: existingRefined } = await supabase
     .from("diagnostics")
     .select("id")
@@ -282,19 +223,10 @@ export async function POST(
     })),
   );
 
-  // Compute next-up dim from the new weak set, ordered by text position,
-  // excluding dimensions the user has already addressed.
-  const { data: choices } = await supabase
-    .from("repair_choices")
-    .select("dimension_id")
-    .eq("repair_plan_id", plan_id);
-  const addressed = new Set((choices ?? []).map((r) => r.dimension_id));
-  const queue = computeQueue(regraded, addressed);
-
   return NextResponse.json({
-    done: queue.length === 0,
-    next_dimension_id: queue[0]?.dimension_id ?? null,
+    ok: true,
     overall_label: overall,
     routing_recommendation: routing,
+    piece_id: owner.piece_id,
   });
 }

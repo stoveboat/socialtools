@@ -10,48 +10,16 @@ import {
   loadLatestSourceDiagnostic,
 } from "@/lib/db/diagnostic";
 import {
-  getTier,
-  getTierLabel,
-  orderByTier,
-} from "@/lib/diagnostics/repair-order";
+  PASS_BLURB,
+  PASS_DIMENSIONS,
+  PASS_LABEL,
+  passesNeeded,
+  type PassId,
+} from "@/lib/diagnostics/passes";
 import type { DimensionGrade, Grade } from "@/lib/diagnostics/types";
 
 const GRADE_RANK: Record<Grade, number> = { A: 4, B: 3, C: 2, D: 1, F: 0 };
-const isWeak = (g: Grade) =>
-  g === "C" || g === "D" || g === "F";
-
-interface RoutingCopy {
-  blurb: string;
-  primaryLabel: string;
-  primaryHref: (pieceId: string, diagId: string) => string;
-}
-
-const ROUTING_COPY: Record<string, RoutingCopy> = {
-  ready_to_ship: {
-    blurb:
-      "The script is in strong shape. You can proceed directly to deriving the four formats, or polish the B grades first.",
-    primaryLabel: "Continue to derivation",
-    primaryHref: (pieceId) => `/convert/${pieceId}`,
-  },
-  surgical_repair: {
-    blurb:
-      "Targeted repairs will get this to ready. Pick the recommended fix below to start, or jump to any weak dimension.",
-    primaryLabel: "Fix the recommended one",
-    primaryHref: (_pieceId, diagId) => `/repair/${diagId}`,
-  },
-  skeleton_mode: {
-    blurb:
-      "The script has structural issues that go beyond line-by-line repair. Skeleton Mode rebuilds around the strongest seed in your draft.",
-    primaryLabel: "Run Skeleton Mode",
-    primaryHref: (pieceId) => `/skeleton/${pieceId}`,
-  },
-  back_to_phase_0: {
-    blurb:
-      "Foundation grades are weak across the board. The strongest path is to clarify intent and start a fresh draft.",
-    primaryLabel: "Start a fresh draft",
-    primaryHref: () => `/`,
-  },
-};
+const isWeak = (g: Grade) => g === "C" || g === "D" || g === "F";
 
 function summarizeCounts(grades: DimensionGrade[]) {
   const tally = { A: 0, B: 0, C: 0, belowC: 0 };
@@ -62,6 +30,12 @@ function summarizeCounts(grades: DimensionGrade[]) {
     else tally.belowC++;
   }
   return tally;
+}
+
+function dimensionLabel(id: string): string {
+  return id
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 export default async function SummaryPage({
@@ -84,26 +58,24 @@ export default async function SummaryPage({
     .single();
   if (!piece) notFound();
 
-  // Latest = whichever diagnostic was last persisted (refined if any fix has
-  // landed, else source). The Summary always reflects the current state.
   const latestDiag = await loadLatestDiagnosticAny(id);
   if (!latestDiag) {
-    // No grades yet — bounce back to the loading screen, which will trigger
-    // the run.
     redirect(`/diagnostic/${id}`);
   }
   const sourceDiag = await loadLatestSourceDiagnostic(id);
   const isRefined = latestDiag.script_version === "refined";
 
-  // Order weak dims by dependency tier (Foundation → Engagement Architecture
-  // → Structural Execution → Surface Execution). The first one becomes the
-  // "recommended next" highlight.
-  const weakInOrder = orderByTier(
-    latestDiag.grades.filter((g) => isWeak(g.grade as Grade)),
+  const weakGrades = latestDiag.grades.filter((g) =>
+    isWeak(g.grade as Grade),
   );
-  const recommendedDimId = weakInOrder[0]?.dimension_id ?? null;
+  const passes = passesNeeded(
+    latestDiag.grades.map((g) => ({
+      dimension_id: g.dimension_id,
+      grade: g.grade as Grade,
+    })),
+  );
+  const recommendedPass: PassId | null = passes[0] ?? null;
 
-  // For Strengths / Polish: simple grade rank ordering.
   const strengths = latestDiag.grades.filter(
     (g) => g.grade === "A" || g.grade === "B",
   );
@@ -115,9 +87,6 @@ export default async function SummaryPage({
   const polish = latestDiag.grades.filter((g) => g.grade === "B");
 
   const counts = summarizeCounts(latestDiag.grades);
-  const routing =
-    ROUTING_COPY[latestDiag.routing_recommendation ?? "surgical_repair"] ??
-    ROUTING_COPY.surgical_repair;
 
   const initialStrip: GradeRow[] = sourceDiag
     ? sourceDiag.grades.map((g) => ({
@@ -134,6 +103,27 @@ export default async function SummaryPage({
     isRefined && piece.refined_script
       ? piece.refined_script
       : piece.source_script;
+
+  // Map weak dims to their pass for the per-pass card preview.
+  const weakByPass: Record<PassId, DimensionGrade[]> = {
+    foundation: [],
+    engagement_structure: [],
+    surface: [],
+  };
+  for (const g of weakGrades) {
+    for (const passId of Object.keys(PASS_DIMENSIONS) as PassId[]) {
+      if (
+        (PASS_DIMENSIONS[passId] as readonly string[]).includes(
+          g.dimension_id,
+        )
+      ) {
+        weakByPass[passId].push(g);
+        break;
+      }
+    }
+  }
+
+  const ready = passes.length === 0;
 
   return (
     <div className="min-h-svh flex flex-col">
@@ -224,25 +214,24 @@ export default async function SummaryPage({
               </div>
             ) : null}
 
-            {weakInOrder.length > 0 ? (
+            {!ready ? (
               <div className="space-y-3">
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                  Required repairs · ordered by dependency tier
+                  Required revision passes
                 </h2>
                 <p className="text-xs text-muted-foreground -mt-2">
-                  Foundation dimensions first, surface dimensions last.
-                  Higher-tier fixes change what lower-tier fixes should do, so
-                  fix from the top down.
+                  Each pass is a coherent rewrite that addresses several
+                  related dimensions together. Run them in order — Foundation
+                  changes ripple through the others, so passes are recommended
+                  top-down.
                 </p>
                 <ul className="space-y-3">
-                  {weakInOrder.map((g) => {
-                    const isRecommended =
-                      g.dimension_id === recommendedDimId;
-                    const tier = getTier(g.dimension_id);
-                    const tierLabel = getTierLabel(g.dimension_id);
+                  {passes.map((passId) => {
+                    const isRecommended = passId === recommendedPass;
+                    const dims = weakByPass[passId];
                     return (
                       <li
-                        key={g.dimension_id}
+                        key={passId}
                         className={`rounded-lg border p-4 space-y-3 ${
                           isRecommended
                             ? "border-foreground bg-muted/20"
@@ -250,33 +239,44 @@ export default async function SummaryPage({
                         }`}
                       >
                         <div className="flex items-center justify-between gap-3 flex-wrap">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <GradeBadge grade={g.grade as Grade} />
-                            <span className="font-semibold">
-                              {g.dimension_name}
-                            </span>
-                            <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                              Tier {tier.tier} · {tierLabel}
-                            </span>
-                            {isRecommended ? (
-                              <span className="inline-flex items-center gap-1 rounded-full border border-foreground/40 bg-background px-2 py-0.5 text-xs font-medium">
-                                ★ Recommended next
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-semibold">
+                                {PASS_LABEL[passId]}
                               </span>
-                            ) : null}
+                              {isRecommended ? (
+                                <span className="inline-flex items-center gap-1 rounded-full border border-foreground/40 bg-background px-2 py-0.5 text-xs font-medium">
+                                  ★ Recommended next
+                                </span>
+                              ) : null}
+                            </div>
+                            <p className="text-sm text-muted-foreground leading-snug">
+                              {PASS_BLURB[passId]}
+                            </p>
                           </div>
                           <Link
-                            href={`/repair/${latestDiag.id}/${g.dimension_id}`}
+                            href={`/repair/${latestDiag.id}/${passId}`}
                             className="shrink-0"
                           >
                             <Button
                               size="sm"
                               variant={isRecommended ? "default" : "outline"}
                             >
-                              Fix this
+                              Run this pass
                             </Button>
                           </Link>
                         </div>
-                        <p className="text-sm leading-relaxed">{g.evidence}</p>
+                        <div className="text-xs text-muted-foreground">
+                          Weak dimensions this pass addresses:{" "}
+                          {dims.length > 0
+                            ? dims
+                                .map(
+                                  (d) =>
+                                    `${d.dimension_name} (${d.grade})`,
+                                )
+                                .join(", ")
+                            : "none — already strong, but the pass is offered for any user-driven adjustments"}
+                        </div>
                       </li>
                     );
                   })}
@@ -285,26 +285,52 @@ export default async function SummaryPage({
             ) : null}
 
             <div className="rounded-lg border bg-muted/20 p-5 space-y-3">
-              <p className="text-sm">{routing.blurb}</p>
-              <div className="flex flex-wrap items-center gap-3">
-                <Link href={routing.primaryHref(id, latestDiag.id)}>
-                  <Button>{routing.primaryLabel}</Button>
-                </Link>
-                {weakInOrder.length === 0 && piece.refined_script ? (
-                  <Link
-                    href={`/repair/${latestDiag.id}/review`}
-                    className="text-sm text-muted-foreground underline"
-                  >
-                    Review changes vs original
-                  </Link>
-                ) : null}
-                <Link
-                  href={`/decision/${id}`}
-                  className="text-sm text-muted-foreground underline"
-                >
-                  Override the recommendation
-                </Link>
-              </div>
+              {ready ? (
+                <>
+                  <p className="text-sm">
+                    The script is in strong shape. You can proceed directly to
+                    deriving the four formats, or run a Surface pass for a
+                    polish even though no surface dimensions are weak.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Link href={`/convert/${id}`}>
+                      <Button>Continue to derivation</Button>
+                    </Link>
+                    {piece.refined_script ? (
+                      <Link
+                        href={`/repair/${latestDiag.id}/review`}
+                        className="text-sm text-muted-foreground underline"
+                      >
+                        Review changes vs original
+                      </Link>
+                    ) : null}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm">
+                    The recommended next move is the highest-impact pass that
+                    has weak dimensions. After each pass the script is fully
+                    re-graded; come back here to pick the next pass or stop
+                    when you{"'"}re satisfied.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-3">
+                    {recommendedPass ? (
+                      <Link
+                        href={`/repair/${latestDiag.id}/${recommendedPass}`}
+                      >
+                        <Button>Run the recommended pass</Button>
+                      </Link>
+                    ) : null}
+                    <Link
+                      href={`/decision/${id}`}
+                      className="text-sm text-muted-foreground underline"
+                    >
+                      Override the recommendation
+                    </Link>
+                  </div>
+                </>
+              )}
             </div>
 
             <div>

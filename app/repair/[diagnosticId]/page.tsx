@@ -1,7 +1,8 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { computeQueue } from "@/lib/diagnostics/repair-order";
+import { passesNeeded } from "@/lib/diagnostics/passes";
 import { loadDiagnosticOwner } from "@/lib/db/repair";
+import type { Grade } from "@/lib/diagnostics/types";
 
 export default async function RepairEntryPage({
   params,
@@ -19,10 +20,8 @@ export default async function RepairEntryPage({
   const owner = await loadDiagnosticOwner(diagnosticId, user.id);
   if (!owner) notFound();
 
-  // Pick the most recent diagnostic for this piece (refined if one exists,
-  // else the original source diagnostic). The queue is computed against the
-  // CURRENT grades, not the initial ones — fixes that side-effect-resolved
-  // other dimensions naturally drop out.
+  // Use the latest persisted diagnostic — refined if any pass has landed,
+  // else the original source diagnostic.
   const { data: latestDiag } = await supabase
     .from("diagnostics")
     .select("id")
@@ -37,33 +36,14 @@ export default async function RepairEntryPage({
     .select("dimension_id, grade")
     .eq("diagnostic_id", latestDiagId);
 
-  const { data: planRow } = await supabase
-    .from("repair_plans")
-    .select("id")
-    .eq("piece_id", owner.piece_id)
-    .eq("diagnostic_id", diagnosticId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const passes = passesNeeded(
+    (rows ?? []).map((r) => ({
+      dimension_id: r.dimension_id,
+      grade: r.grade as Grade,
+    })),
+  );
 
-  let addressed = new Set<string>();
-  if (planRow) {
-    const { data: choices } = await supabase
-      .from("repair_choices")
-      .select("dimension_id, status")
-      .eq("repair_plan_id", planRow.id);
-    addressed = new Set(
-      (choices ?? [])
-        .filter((c) =>
-          ["accepted", "edited", "skipped", "auto_resolved"].includes(c.status),
-        )
-        .map((c) => c.dimension_id),
-    );
-  }
-
-  const queue = computeQueue(rows ?? [], addressed);
-
-  if (queue.length === 0) {
+  if (passes.length === 0) {
     const { data: piece } = await supabase
       .from("pieces")
       .select("refined_script")
@@ -75,5 +55,5 @@ export default async function RepairEntryPage({
     redirect(`/diagnostic/${owner.piece_id}/summary`);
   }
 
-  redirect(`/repair/${diagnosticId}/${queue[0].dimension_id}`);
+  redirect(`/repair/${diagnosticId}/${passes[0]}`);
 }

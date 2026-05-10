@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { runPhase0 } from "@/lib/diagnostics/grade";
 
 const MIN_WORDS = 30;
-const MAX_WORDS = 5000;
+const MAX_WORDS = 1500;
 
 function countWords(text: string): number {
   const trimmed = text.trim();
@@ -24,7 +24,7 @@ export async function analyzeScript(formData: FormData) {
   }
   if (words > MAX_WORDS) {
     redirect(
-      `/?error=${encodeURIComponent(`Scripts over ${MAX_WORDS} words are out of scope for v1. Try a shorter excerpt.`)}`,
+      `/?error=${encodeURIComponent(`The tool is built for short-form video scripts (≈8-10 minutes of speaking time, ${MAX_WORDS} words). Trim to a shorter excerpt or focus on one segment.`)}`,
     );
   }
 
