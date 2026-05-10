@@ -62,11 +62,44 @@ export interface DiagnosticReport {
 
 export type DerivationFormat = "carousel" | "caption_reel" | "voiceover_broll";
 
+export type CarouselSubgenre =
+  | "explainer"
+  | "vulnerable_list"
+  | "contrarian_list"
+  | "uncertain";
+
+// Carousels optimise for SAVES, with shares secondary. The format's primary
+// engagement engine is the micro-cliffhanger between slides — each slide
+// must end in a way that creates pull to the next. Three mechanically
+// distinct subgenres, with different slide-shape rules:
+//
+//   explainer      - tactical content, mistake-framing. Headline + body.
+//   vulnerable_list - bare admissions. Headline only; silence is the writing.
+//   contrarian_list - position claims. Headline + optional 1-line amplification.
+//
+// The model auto-detects the subgenre from the source but the user's
+// register selection during Convert configuration acts as an intent override.
 export interface CarouselBrief {
-  cover_slide: { headline: string };
-  interior_slides: { slide_number: number; headline: string; body: string }[];
-  final_slide: { cta: string };
+  subgenre: CarouselSubgenre;
+  subgenre_reasoning: string;
+  cover_slide: {
+    headline: string;
+    headline_word_count: number;
+    earns_swipe: string;
+  };
+  interior_slides: {
+    slide_number: number;
+    headline: string;
+    body: string;
+    pull_to_next: string;
+  }[];
+  final_slide: {
+    cta_type: "save" | "follow" | "comment" | "soft_signoff";
+    cta_text: string;
+    cta_reasoning: string;
+  };
   design_notes: string;
+  loss_aversion_opportunity: string;
 }
 
 // The caption reel in this product is a 7-second looping vertical video
@@ -172,19 +205,25 @@ export const REGISTERS_BY_FORMAT: Record<
 > = {
   carousel: [
     {
-      name: "Textbook",
-      oneliner: "Pure utility, optimised to be saved and re-read.",
-      example: "Dense reference card. Each slide is a definition, rule, or step.",
+      name: "Explainer",
+      oneliner:
+        "Tactical reference. Each slide states a claim and explains it briefly.",
+      example:
+        "\"5 mistakes I made starting [X] (so you don't have to)\". Mistake-framing typically saves harder than positive framing — use when the source supports it.",
     },
     {
-      name: "Friend in Textbook",
-      oneliner: "A vulnerable list. You're admitting what you learned the hard way.",
-      example: "\"5 things I wish I'd known about X — slide one is the one that cost me.\"",
+      name: "Vulnerable List",
+      oneliner:
+        "Bare admissions. Each slide is a single statement; the silence after it IS the writing.",
+      example:
+        "\"Thoughts I have as a [X] that I never say out loud.\" Slides do NOT have body explanation — explanation dilutes the format.",
     },
     {
-      name: "Mirror in Textbook",
-      oneliner: "A relatable list. You're naming the experience the reader already lives.",
-      example: "\"6 things you'll recognise if you've ever shipped on a hard deadline.\"",
+      name: "Contrarian List",
+      oneliner:
+        "Position claims. Each slide stakes ground; the carousel is what the reader stands for.",
+      example:
+        "\"Things I refuse to feel guilty about as a [X].\" Sharp, declarative. Save-trigger is tribe-flag — the reader saves to claim the position.",
     },
   ],
   voiceover_broll: [

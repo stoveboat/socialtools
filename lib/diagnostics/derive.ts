@@ -42,36 +42,96 @@ function isStringArray(v: unknown): v is string[] {
   return Array.isArray(v) && v.every((s) => typeof s === "string");
 }
 
+const VALID_SUBGENRES = new Set([
+  "explainer",
+  "vulnerable_list",
+  "contrarian_list",
+  "uncertain",
+]);
+
+const VALID_CTA_TYPES = new Set([
+  "save",
+  "follow",
+  "comment",
+  "soft_signoff",
+]);
+
 function validateCarousel(parsed: unknown): CarouselBrief {
   if (!parsed || typeof parsed !== "object") {
     throw new BriefValidationError("Not an object", JSON.stringify(parsed));
   }
   const o = parsed as Record<string, unknown>;
+
+  const subgenre =
+    typeof o.subgenre === "string" && VALID_SUBGENRES.has(o.subgenre)
+      ? (o.subgenre as CarouselBrief["subgenre"])
+      : "uncertain";
+
   const cover = o.cover_slide as Record<string, unknown> | undefined;
   if (!cover || typeof cover.headline !== "string") {
     throw new BriefValidationError("cover_slide.headline missing", "");
   }
+  const headlineWordCount =
+    typeof cover.headline_word_count === "number"
+      ? cover.headline_word_count
+      : cover.headline.trim().split(/\s+/).length;
+
   if (!Array.isArray(o.interior_slides) || o.interior_slides.length === 0) {
     throw new BriefValidationError("interior_slides must be a non-empty array", "");
   }
+  const slides: CarouselBrief["interior_slides"] = [];
   for (const s of o.interior_slides as Record<string, unknown>[]) {
-    if (
-      typeof s.slide_number !== "number" ||
-      typeof s.headline !== "string" ||
-      typeof s.body !== "string"
-    ) {
+    if (typeof s.slide_number !== "number" || typeof s.headline !== "string") {
       throw new BriefValidationError("interior_slide entry malformed", "");
     }
+    slides.push({
+      slide_number: s.slide_number,
+      headline: s.headline,
+      body: typeof s.body === "string" ? s.body : "",
+      pull_to_next: typeof s.pull_to_next === "string" ? s.pull_to_next : "",
+    });
   }
+
   const final = o.final_slide as Record<string, unknown> | undefined;
-  if (!final || typeof final.cta !== "string") {
-    throw new BriefValidationError("final_slide.cta missing", "");
+  if (!final) {
+    throw new BriefValidationError("final_slide missing", "");
   }
+  const ctaType =
+    typeof final.cta_type === "string" && VALID_CTA_TYPES.has(final.cta_type)
+      ? (final.cta_type as CarouselBrief["final_slide"]["cta_type"])
+      : "save";
+  const ctaText =
+    typeof final.cta_text === "string"
+      ? final.cta_text
+      : typeof final.cta === "string"
+        ? final.cta // tolerant of model returning legacy `cta` field
+        : "";
+  if (!ctaText) {
+    throw new BriefValidationError("final_slide.cta_text missing", "");
+  }
+
   return {
-    cover_slide: { headline: cover.headline },
-    interior_slides: o.interior_slides as CarouselBrief["interior_slides"],
-    final_slide: { cta: final.cta },
+    subgenre,
+    subgenre_reasoning:
+      typeof o.subgenre_reasoning === "string" ? o.subgenre_reasoning : "",
+    cover_slide: {
+      headline: cover.headline,
+      headline_word_count: headlineWordCount,
+      earns_swipe:
+        typeof cover.earns_swipe === "string" ? cover.earns_swipe : "",
+    },
+    interior_slides: slides,
+    final_slide: {
+      cta_type: ctaType,
+      cta_text: ctaText,
+      cta_reasoning:
+        typeof final.cta_reasoning === "string" ? final.cta_reasoning : "",
+    },
     design_notes: typeof o.design_notes === "string" ? o.design_notes : "",
+    loss_aversion_opportunity:
+      typeof o.loss_aversion_opportunity === "string"
+        ? o.loss_aversion_opportunity
+        : "",
   };
 }
 

@@ -695,29 +695,97 @@ Produce a tighter version. Respond with only the JSON object.`;
 // Derivation (Phase 4) prompts
 // ============================================================================
 
-export const CAROUSEL_SYSTEM_PROMPT = `You are a producer translating a talking-head video script into a carousel brief for Instagram. The carousel will be 5-8 slides (cover + value beats + CTA). Your job is to produce a slide-by-slide brief that the user takes into Canva or Figma.
+// Carousel — subgenre-aware brief
+//
+// Carousels optimise for SAVES. Saves matter beyond their immediate count
+// because Instagram re-serves carousels to users who didn't swipe through on
+// first view, giving the post a second discovery window. Carousels are
+// reference material by design — slides must deliver standalone value when
+// the user returns to them.
+//
+// The carousel's primary engagement engine is the micro-cliffhanger between
+// slides. A linear translation of talking-head beats loses this mechanic; it
+// has to be engineered explicitly.
+//
+// Three subgenres with different slide-shape rules. The user picks one
+// during Convert configuration; the model honours the choice but flags the
+// fit if the source doesn't support it cleanly.
 
-The brief specifies content, not design. You provide:
-- Cover slide: a typographic hook (5-12 words, derived from the spoken hook)
-- Slides 2 through N-1: one beat per slide, with headline (5-10 words) and body (2-4 sentences)
-- Final slide: CTA matched to the carousel's chosen register
+export const CAROUSEL_SYSTEM_PROMPT = `You are a producer creating a carousel from a talking-head video script. Carousels are Instagram feed posts (5-8 slides typical, 7-10 for educational deep-dives, 4:5 portrait at 1080×1350) that optimise for SAVES.
 
-Register options for carousels:
-- Textbook: pure utility, dense reference material, save-optimized
-- Friend in Textbook: vulnerable list ("things I learned the hard way about X")
-- Mirror in Textbook: relatable list ("things you'll recognize if you're a [X]")
+Saves matter beyond their immediate count because Instagram re-serves carousels to users who didn't swipe through on first view, giving the post a second discovery window. Carousels are reference material by design — a user who saves a carousel is bookmarking it for later.
+
+The carousel's primary engagement engine is the MICRO-CLIFFHANGER between slides. Each slide must end in a way that creates pull toward the next. A linear translation of talking-head beats into slides loses this mechanic — engineer it deliberately.
+
+The user has indicated a subgenre via their register choice. Honour that choice unless the source clearly cannot support it (in which case set subgenre to "uncertain" and explain). The three subgenres differ in slide shape:
+
+1. EXPLAINER — Tactical content, mistake-framing, things-learned. Each slide states a claim and explains it briefly. Save-trigger: "I want this list as reference." Loss-aversion framing (mistakes, regrets, things-I-wish-I-knew) drives saves harder than positive framing — use it when the source supports it. Example header: "5 things I wish I'd known about X (so you don't have to)."
+
+2. VULNERABLE_LIST — Confessions, admissions, "thoughts nobody says." Each slide is a bare admission, often a single sentence with NO body explanation. The silence after each statement IS the writing. Save-trigger: "I want to come back to this when I feel alone in this." Reaction the format produces: "Oh my god, me too" / "I've never heard anybody say it like this." DO NOT add explanations — adding body to vulnerable slides dilutes the format. Example header: "Thoughts I have as a [X] that I never say out loud."
+
+3. CONTRARIAN_LIST — Stake-the-claim positions. "Things I refuse to," "things I won't tolerate," "things I stopped doing." Each slide is a position claim, optionally followed by a single line of amplification (no explanation, just intensification). Save-trigger: tribe-flag — the user saves because the carousel says something they want to claim. Example header: "Things I refuse to feel guilty about as a [X]."
+
+FORMAT MECHANICS
+
+Cover slide:
+- 5-12 words, hard limit at 12.
+- Declarative, not interrogative (questions work in talking head; declarative claims work as carousel covers).
+- Contains either a tension element (curiosity gap, contrarian flip, loss-aversion frame) OR a clear utility promise.
+- After drafting, ask: would a viewer scrolling past this STOP and SWIPE? If not, redraft. Articulate why the cover earns the swipe in cover_slide.earns_swipe.
+
+Interior slides:
+- ONE idea per slide. One claim, one visual cue, one takeaway. No slide delivers two ideas.
+- Subgenre-specific shape:
+  - EXPLAINER: 5-10 word headline + 2-4 sentences of body.
+  - VULNERABLE_LIST: a single statement, often a single sentence. body is empty or contains only a brief sensory anchor (one line max). Default to empty body — let the bare admissions stand.
+  - CONTRARIAN_LIST: 5-10 word position claim, optional 1-sentence amplification in body (intensification, not explanation). May be empty body.
+- Each slide must end in a way that creates pull to the next. Articulate it in pull_to_next:
+  - Explainer: leaves a question the next slide answers ("but what about X?").
+  - Vulnerable list: builds curiosity about what other admissions are coming.
+  - Contrarian list: escalates intensity — each position sharper than the last.
+
+Final slide CTA, matched to optimisation:
+- "save" — for max saves: "Save this so you don't forget" / "Save for the next time [X]."
+- "follow" — for follow conversion: "Follow for more [niche-specific]."
+- "comment" — for comments: "Drop a 🤍 if [resonance]" / "Comment your version" / "Tag someone who [trigger]."
+- "soft_signoff" — branded sign-off when none of the above fits.
+
+QUALITY TESTS — apply to your own output before finalising:
+- Read the carousel cold. Does the cover earn the swipe? If not, redraft the cover before everything else.
+- Does each interior slide create pull to the next? If any feels like a dead end, rewrite its closing line.
+- Is each slide standalone-valuable when the user returns to it saved? If a slide only makes sense in sequence, it's not saveable individually.
+- For VULNERABLE_LIST: have you over-explained? Cut any explanation from slide bodies — let bare admissions stand.
+- For CONTRARIAN_LIST: do the positions escalate, or do they read as a flat enumeration? Reorder for escalation.
 
 Output format (JSON):
 {
-  "cover_slide": {"headline": "string"},
-  "interior_slides": [{"slide_number": 1, "headline": "string", "body": "string"}],
-  "final_slide": {"cta": "string"},
-  "design_notes": "1-2 sentences on visual treatment matched to the register"
+  "subgenre": "explainer" | "vulnerable_list" | "contrarian_list" | "uncertain",
+  "subgenre_reasoning": "string — why this subgenre fits the source. If the user-requested subgenre doesn't fit cleanly, explain why and what you defaulted to.",
+  "cover_slide": {
+    "headline": "string (5-12 words, declarative)",
+    "headline_word_count": integer,
+    "earns_swipe": "string — why this hook makes a viewer scrolling past stop and swipe"
+  },
+  "interior_slides": [
+    {
+      "slide_number": integer,
+      "headline": "string",
+      "body": "string (may be empty for vulnerable_list and contrarian_list slides)",
+      "pull_to_next": "string — what creates the swipe to the next slide"
+    }
+  ],
+  "final_slide": {
+    "cta_type": "save" | "follow" | "comment" | "soft_signoff",
+    "cta_text": "string",
+    "cta_reasoning": "string — why this CTA matches the carousel's optimisation target"
+  },
+  "design_notes": "1-2 sentences on visual treatment matched to the subgenre",
+  "loss_aversion_opportunity": "string — if the source could be reframed with loss-aversion (mistakes, regrets, costs) to drive more saves, name how. Empty if not applicable or already applied."
 }`;
 
-export const CAROUSEL_USER_PROMPT = `Translate this script into a carousel brief.
+export const CAROUSEL_USER_PROMPT = `Build a carousel from this talking head.
 
-Register chosen: {{register}}
+User-selected subgenre (register): {{register}}
 
 Source script:
 """
@@ -728,7 +796,10 @@ Channel context:
 - Audience: {{audience}}
 - Channel: {{channel}}
 
-Produce 5-8 slides total. Use the script's actual content and word choices wherever possible — do not rewrite, translate. The carousel is the same idea in a different container.
+User's non-negotiables for the carousel (optional, may be empty — phrases that must appear in specific slides, slides that must end on specific lines, or admissions/positions to preserve verbatim):
+{{non_negotiables}}
+
+Produce 5-8 interior slides typically (7-10 if the source supports an educational deep dive). Honour the subgenre choice unless the source can't support it. Engineer micro-cliffhangers between every slide. Apply the quality tests before finalising.
 
 Respond with only the JSON object.`;
 

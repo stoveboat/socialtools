@@ -114,7 +114,7 @@ export default async function BriefPage({
         />
 
         {fmt === "carousel" ? (
-          <CarouselView brief={content as CarouselBrief} />
+          <CarouselView brief={content as CarouselBrief} pieceId={id} />
         ) : fmt === "caption_reel" ? (
           <CaptionReelView
             brief={content as CaptionReelBrief}
@@ -128,18 +128,114 @@ export default async function BriefPage({
   );
 }
 
-function CarouselView({ brief }: { brief: CarouselBrief }) {
+const SUBGENRE_LABEL: Record<string, string> = {
+  explainer: "Explainer",
+  vulnerable_list: "Vulnerable list",
+  contrarian_list: "Contrarian list",
+  uncertain: "Uncertain fit",
+};
+
+function CarouselView({
+  brief,
+  pieceId,
+}: {
+  brief: CarouselBrief;
+  pieceId: string;
+}) {
+  // Legacy detection: pre-rewrite carousels lack `subgenre` and use the old
+  // final_slide.cta shape. Surface a regenerate banner.
+  const hasSubgenre = !!(brief as { subgenre?: string }).subgenre;
+  const hasNewCtaShape = !!(
+    brief.final_slide as { cta_text?: string }
+  ).cta_text;
+  if (!hasSubgenre || !hasNewCtaShape) {
+    return (
+      <div className="rounded-lg border bg-amber-50 border-amber-300 p-5 space-y-3">
+        <p className="text-sm">
+          This carousel brief was generated under the earlier definition of
+          the format. The carousel prompt has since been rewritten to be
+          subgenre-aware (Explainer / Vulnerable list / Contrarian list)
+          with engineered micro-cliffhangers between slides and an
+          optimisation-matched CTA.
+        </p>
+        <p className="text-sm">
+          Regenerate the brief from the configure screen to get the new
+          shape.
+        </p>
+        <Link href={`/convert/${pieceId}`}>
+          <Button size="sm">Back to format selection</Button>
+        </Link>
+      </div>
+    );
+  }
+
+  const subgenreLabel =
+    SUBGENRE_LABEL[brief.subgenre] ?? brief.subgenre;
+  const isVulnerable = brief.subgenre === "vulnerable_list";
+  const isContrarian = brief.subgenre === "contrarian_list";
+
   return (
     <div className="space-y-5">
-      <Slide title="Cover" body={brief.cover_slide.headline} accent />
+      <div className="rounded-md border bg-muted/30 p-4 space-y-1">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <span className="inline-flex items-center rounded-full bg-background px-2 py-0.5 text-xs font-medium border">
+            {subgenreLabel}
+          </span>
+          <span className="text-xs text-muted-foreground">
+            {brief.interior_slides.length + 2} slides total
+          </span>
+        </div>
+        {brief.subgenre_reasoning ? (
+          <p className="text-sm leading-relaxed">{brief.subgenre_reasoning}</p>
+        ) : null}
+      </div>
+
+      {brief.loss_aversion_opportunity ? (
+        <div className="rounded-md border bg-emerald-50 border-emerald-300 px-4 py-3 text-sm text-emerald-900">
+          <span className="font-medium">Loss-aversion opportunity: </span>
+          {brief.loss_aversion_opportunity}
+        </div>
+      ) : null}
+
+      <Slide
+        title={`Cover · ${brief.cover_slide.headline_word_count} words`}
+        body={brief.cover_slide.headline}
+        accent
+        footnote={
+          brief.cover_slide.earns_swipe
+            ? `Earns the swipe: ${brief.cover_slide.earns_swipe}`
+            : undefined
+        }
+      />
+
       {brief.interior_slides.map((s) => (
         <Slide
           key={s.slide_number}
           title={`Slide ${s.slide_number} — ${s.headline}`}
-          body={s.body}
+          body={
+            // Vulnerable list intentionally has empty bodies. Render a
+            // small italic annotation if body is empty so the user sees
+            // that's the format working as designed, not a gap.
+            s.body || (isVulnerable ? "(no body — bare admission)" : "")
+          }
+          bodyMuted={isVulnerable && !s.body}
+          // Contrarian-list slides may have empty bodies (just the position).
+          // No explicit empty-state text needed; layout reads as deliberate.
+          contrarianEmpty={isContrarian && !s.body}
         />
       ))}
-      <Slide title="Final slide (CTA)" body={brief.final_slide.cta} accent />
+
+      <Slide
+        title={`Final slide (CTA · ${brief.final_slide.cta_type})`}
+        body={brief.final_slide.cta_text}
+        accent
+        footnote={
+          brief.final_slide.cta_reasoning
+            ? `Why this CTA: ${brief.final_slide.cta_reasoning}`
+            : undefined
+        }
+      />
+
       {brief.design_notes ? (
         <p className="text-sm text-muted-foreground border-t pt-4">
           <span className="font-medium">Design notes: </span>
@@ -154,10 +250,16 @@ function Slide({
   title,
   body,
   accent,
+  footnote,
+  bodyMuted,
+  contrarianEmpty,
 }: {
   title: string;
   body: string;
   accent?: boolean;
+  footnote?: string;
+  bodyMuted?: boolean;
+  contrarianEmpty?: boolean;
 }) {
   return (
     <div
@@ -166,7 +268,24 @@ function Slide({
       <p className="text-xs uppercase tracking-wide text-muted-foreground mb-2">
         {title}
       </p>
-      <p className="leading-relaxed whitespace-pre-wrap">{body}</p>
+      {body || !contrarianEmpty ? (
+        <p
+          className={`leading-relaxed whitespace-pre-wrap ${
+            bodyMuted ? "text-muted-foreground italic text-sm" : ""
+          }`}
+        >
+          {body}
+        </p>
+      ) : (
+        <p className="text-xs italic text-muted-foreground">
+          (position only — no amplification)
+        </p>
+      )}
+      {footnote ? (
+        <p className="text-xs text-muted-foreground italic mt-2">
+          {footnote}
+        </p>
+      ) : null}
     </div>
   );
 }

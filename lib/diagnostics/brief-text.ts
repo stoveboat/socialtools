@@ -8,23 +8,51 @@ import type {
 import { FORMAT_LABEL } from "./types";
 
 function carouselToText(b: CarouselBrief, register: string): string {
+  // Legacy briefs lack subgenre and use the old final_slide.cta shape.
+  const hasSubgenre = !!(b as { subgenre?: string }).subgenre;
+  const hasNewCta = !!(b.final_slide as { cta_text?: string }).cta_text;
+  if (!hasSubgenre || !hasNewCta) {
+    return `# Carousel — ${register}\n\n(Legacy brief in outdated format. Regenerate to get the current subgenre-aware artifact.)`;
+  }
+
   const lines: string[] = [];
-  lines.push(`# Carousel — ${register}`);
+  const subgenreLabel = b.subgenre.replace(/_/g, " ");
+  lines.push(`# Carousel — ${subgenreLabel}`);
+  if (b.subgenre_reasoning) {
+    lines.push("");
+    lines.push(`> ${b.subgenre_reasoning}`);
+  }
   lines.push("");
-  lines.push(`## Cover slide`);
+  lines.push(
+    `## Cover slide (${b.cover_slide.headline_word_count} words)`,
+  );
   lines.push(b.cover_slide.headline);
+  if (b.cover_slide.earns_swipe) {
+    lines.push("");
+    lines.push(`_Earns the swipe: ${b.cover_slide.earns_swipe}_`);
+  }
   lines.push("");
   for (const s of b.interior_slides) {
     lines.push(`## Slide ${s.slide_number} — ${s.headline}`);
-    lines.push(s.body);
+    if (s.body) {
+      lines.push(s.body);
+    }
     lines.push("");
   }
-  lines.push(`## Final slide (CTA)`);
-  lines.push(b.final_slide.cta);
+  lines.push(`## Final slide (${b.final_slide.cta_type})`);
+  lines.push(b.final_slide.cta_text);
+  if (b.final_slide.cta_reasoning) {
+    lines.push("");
+    lines.push(`_Why: ${b.final_slide.cta_reasoning}_`);
+  }
   if (b.design_notes) {
     lines.push("");
     lines.push(`---`);
     lines.push(`Design notes: ${b.design_notes}`);
+  }
+  if (b.loss_aversion_opportunity) {
+    lines.push("");
+    lines.push(`Loss-aversion opportunity: ${b.loss_aversion_opportunity}`);
   }
   return lines.join("\n");
 }
