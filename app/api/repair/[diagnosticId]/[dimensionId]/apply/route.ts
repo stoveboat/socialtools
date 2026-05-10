@@ -7,6 +7,7 @@ import {
 import { gradeDimension } from "@/lib/diagnostics/grade";
 import { DIMENSION_PROMPTS } from "@/lib/diagnostics/prompts";
 import type { ChannelContext, DimensionGrade } from "@/lib/diagnostics/types";
+import { computeQueue } from "@/lib/diagnostics/repair-order";
 import {
   getOrCreateRepairPlan,
   loadDiagnosticOwner,
@@ -14,26 +15,42 @@ import {
 
 export const maxDuration = 90;
 
-const DIMENSION_ORDER = [
-  "spine",
-  "audience",
-  "tension",
-  "payoff",
-  "authority",
-  "hook",
-  "structure",
-  "specificity",
-  "compression",
-  "voice",
-  "off_positioning",
-];
-
 const isWeak = (g: string) => g === "C" || g === "D" || g === "F";
 
-interface AutoResolved {
-  dimension_id: string;
-  dimension_name: string;
-  new_grade: string;
+function classifyOverall(grades: DimensionGrade[]): {
+  overall: "Strong" | "Mixed" | "Needs Work";
+  routing:
+    | "ready_to_ship"
+    | "surgical_repair"
+    | "skeleton_mode"
+    | "back_to_phase_0";
+} {
+  const FOUNDATION = new Set([
+    "spine",
+    "audience",
+    "tension",
+    "payoff",
+    "authority",
+  ]);
+  const foundation = grades.filter((g) => FOUNDATION.has(g.dimension_id));
+  const execution = grades.filter((g) => !FOUNDATION.has(g.dimension_id));
+  const weakFoundation = foundation.filter((g) => isWeak(g.grade));
+  const weakExecution = execution.filter((g) => isWeak(g.grade));
+  const spineGrade = grades.find((g) => g.dimension_id === "spine")?.grade;
+
+  if (weakFoundation.length === 0 && weakExecution.length === 0) {
+    return { overall: "Strong", routing: "ready_to_ship" };
+  }
+  if (weakFoundation.length >= 3 || spineGrade === "F") {
+    return { overall: "Needs Work", routing: "back_to_phase_0" };
+  }
+  if (
+    weakFoundation.length >= 1 ||
+    (weakFoundation.length === 0 && weakExecution.length >= 5)
+  ) {
+    return { overall: "Needs Work", routing: "skeleton_mode" };
+  }
+  return { overall: "Mixed", routing: "surgical_repair" };
 }
 
 export async function POST(
@@ -88,8 +105,8 @@ export async function POST(
   }
   const currentScript = piece.refined_script ?? piece.source_script;
 
-  // Replace any existing choice for this dimension - the user changed their
-  // mind or revisited.
+  // Replace any existing choice for this dimension - the user may have
+  // revisited and changed their mind.
   await supabase
     .from("repair_choices")
     .delete()
@@ -142,48 +159,37 @@ export async function POST(
       .eq("id", owner.piece_id);
   }
 
-  // Compute the remaining queue: dims that were weak in the initial diagnostic
-  // and don't yet have a repair_choice. Re-grade those against the new script
-  // state and skip any that are no longer weak.
-  const { data: initialGrades } = await supabase
-    .from("dimension_grades")
-    .select("dimension_id, dimension_name, grade")
-    .eq("diagnostic_id", diagnosticId);
-  const initialWeakIds = new Set(
-    (initialGrades ?? [])
-      .filter((r) => isWeak(r.grade))
-      .map((r) => r.dimension_id),
-  );
-
-  const { data: existingChoices } = await supabase
-    .from("repair_choices")
-    .select("dimension_id, status")
-    .eq("repair_plan_id", plan_id);
-  const addressedIds = new Set(
-    (existingChoices ?? []).map((r) => r.dimension_id),
-  );
-
-  const queueIds = [...initialWeakIds]
-    .filter((id) => !addressedIds.has(id))
-    .sort(
-      (a, b) => DIMENSION_ORDER.indexOf(a) - DIMENSION_ORDER.indexOf(b),
-    );
-
-  const dimNameById: Record<string, string> = {};
-  for (const r of initialGrades ?? []) {
-    dimNameById[r.dimension_id] = r.dimension_name;
-  }
-
-  // No remaining queue - we're done.
-  if (queueIds.length === 0) {
+  // For a skip with no script change, re-grading is wasted work — return the
+  // queue from the latest persisted diagnostic.
+  if (skipped) {
+    const { data: latestRefined } = await supabase
+      .from("diagnostics")
+      .select("id")
+      .eq("piece_id", owner.piece_id)
+      .eq("script_version", "refined")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const latestId = latestRefined?.id ?? diagnosticId;
+    const { data: latestGrades } = await supabase
+      .from("dimension_grades")
+      .select("dimension_id, grade")
+      .eq("diagnostic_id", latestId);
+    const { data: choices } = await supabase
+      .from("repair_choices")
+      .select("dimension_id")
+      .eq("repair_plan_id", plan_id);
+    const addressed = new Set((choices ?? []).map((r) => r.dimension_id));
+    const queue = computeQueue(latestGrades ?? [], addressed);
     return NextResponse.json({
-      done: true,
-      auto_resolved: [] as AutoResolved[],
-      next_dimension_id: null,
+      done: queue.length === 0,
+      next_dimension_id: queue[0]?.dimension_id ?? null,
     });
   }
 
-  // Resolve the channel context for re-grading.
+  // Apply landed - re-grade ALL 11 dimensions in parallel against the new
+  // draft so the user sees the full impact of their fix, including
+  // dimensions that weren't in the original queue.
   const { data: ctx } = await supabase
     .from("phase_0_contexts")
     .select(
@@ -198,67 +204,97 @@ export async function POST(
     topic_summary: ctx?.topic_summary || "",
   };
 
-  // Skip the re-grade work if the user just skipped this dimension - the
-  // script didn't change, so the queue's grades didn't change.
-  let regraded: DimensionGrade[] = [];
-  if (!skipped) {
-    const prompts = queueIds
-      .map((id) => DIMENSION_PROMPTS.find((p) => p.id === id))
-      .filter((p): p is (typeof DIMENSION_PROMPTS)[number] => Boolean(p));
-    try {
-      regraded = await Promise.all(
-        prompts.map((p) =>
-          gradeDimension(p, {
-            script: nextScript,
-            audience: context.audience,
-            channel: context.channel,
-            traction: context.traction,
-            topic_summary: context.topic_summary,
-          }),
-        ),
-      );
-    } catch (err) {
+  const vars = {
+    script: nextScript,
+    audience: context.audience,
+    channel: context.channel,
+    traction: context.traction,
+    topic_summary: context.topic_summary,
+  };
+
+  let regraded: DimensionGrade[];
+  try {
+    regraded = await Promise.all(
+      DIMENSION_PROMPTS.map((p) => gradeDimension(p, vars)),
+    );
+  } catch (err) {
+    return NextResponse.json(
+      { error: "regrade_failed", detail: (err as Error).message },
+      { status: 500 },
+    );
+  }
+
+  const { overall, routing } = classifyOverall(regraded);
+
+  // Replace the refined diagnostic in place. If one doesn't exist yet, create
+  // it; otherwise update its row and replace its dimension_grades.
+  const { data: existingRefined } = await supabase
+    .from("diagnostics")
+    .select("id")
+    .eq("piece_id", owner.piece_id)
+    .eq("script_version", "refined")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  let refinedDiagId: string;
+  if (existingRefined) {
+    refinedDiagId = existingRefined.id;
+    await supabase
+      .from("dimension_grades")
+      .delete()
+      .eq("diagnostic_id", refinedDiagId);
+    await supabase
+      .from("diagnostics")
+      .update({
+        routing_recommendation: routing,
+        overall_label: overall,
+      })
+      .eq("id", refinedDiagId);
+  } else {
+    const { data: created, error: createError } = await supabase
+      .from("diagnostics")
+      .insert({
+        piece_id: owner.piece_id,
+        script_version: "refined",
+        routing_recommendation: routing,
+        overall_label: overall,
+      })
+      .select("id")
+      .single();
+    if (createError || !created) {
       return NextResponse.json(
-        { error: "regrade_failed", detail: (err as Error).message },
+        { error: "save_failed", detail: createError?.message },
         { status: 500 },
       );
     }
+    refinedDiagId = created.id;
   }
 
-  // Mark dims that are no longer weak as auto_resolved so they're skipped
-  // going forward.
-  const autoResolved: AutoResolved[] = [];
-  if (!skipped) {
-    const stillWeak: string[] = [];
-    for (const g of regraded) {
-      if (isWeak(g.grade)) {
-        stillWeak.push(g.dimension_id);
-      } else {
-        autoResolved.push({
-          dimension_id: g.dimension_id,
-          dimension_name: g.dimension_name,
-          new_grade: g.grade,
-        });
-        await supabase.from("repair_choices").insert({
-          repair_plan_id: plan_id,
-          dimension_id: g.dimension_id,
-          chosen_fix: `Auto-resolved by prior fix (now ${g.grade})`,
-          status: "auto_resolved",
-        });
-      }
-    }
-    const nextId = queueIds.find((id) => stillWeak.includes(id)) ?? null;
-    return NextResponse.json({
-      done: nextId === null,
-      auto_resolved: autoResolved,
-      next_dimension_id: nextId,
-    });
-  }
+  await supabase.from("dimension_grades").insert(
+    regraded.map((g) => ({
+      diagnostic_id: refinedDiagId,
+      dimension_id: g.dimension_id,
+      dimension_name: g.dimension_name,
+      grade: g.grade,
+      evidence: g.evidence,
+      repair_suggestion: g.repair_suggestion,
+    })),
+  );
 
-  // For skip we don't re-grade — just hand off the next still-queued dim.
+  // Compute next-up dim from the new weak set, ordered by text position,
+  // excluding dimensions the user has already addressed.
+  const { data: choices } = await supabase
+    .from("repair_choices")
+    .select("dimension_id")
+    .eq("repair_plan_id", plan_id);
+  const addressed = new Set((choices ?? []).map((r) => r.dimension_id));
+  const queue = computeQueue(regraded, addressed);
+
   return NextResponse.json({
-    done: false,
-    auto_resolved: [] as AutoResolved[],
-    next_dimension_id: queueIds[0],
+    done: queue.length === 0,
+    next_dimension_id: queue[0]?.dimension_id ?? null,
+    overall_label: overall,
+    routing_recommendation: routing,
   });
 }

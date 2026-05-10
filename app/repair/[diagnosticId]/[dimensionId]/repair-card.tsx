@@ -10,17 +10,10 @@ import { GradeBadge } from "@/components/grade-badge";
 import type { FixCandidate } from "@/lib/diagnostics/repair";
 import type { DimensionGrade, Grade } from "@/lib/diagnostics/types";
 
-interface AutoResolved {
-  dimension_id: string;
-  dimension_name: string;
-  new_grade: string;
-}
-
 interface RepairCardProps {
   diagnosticId: string;
   pieceId: string;
   dimensionId: string;
-  dimensionName: string;
 }
 
 type LoadState =
@@ -33,7 +26,6 @@ export function RepairCard({
   diagnosticId,
   pieceId,
   dimensionId,
-  dimensionName,
 }: RepairCardProps) {
   const router = useRouter();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
@@ -130,20 +122,11 @@ export function RepairCard({
       const data = (await res.json()) as {
         done: boolean;
         next_dimension_id: string | null;
-        auto_resolved: AutoResolved[];
       };
-      const resolvedParam =
-        data.auto_resolved.length > 0
-          ? `?resolved=${encodeURIComponent(
-              data.auto_resolved.map((r) => r.dimension_name).join("|"),
-            )}&from=${encodeURIComponent(dimensionName)}`
-          : "";
       if (data.done || !data.next_dimension_id) {
-        router.replace(`/repair/${diagnosticId}/review${resolvedParam}`);
+        router.replace(`/repair/${diagnosticId}/review`);
       } else {
-        router.replace(
-          `/repair/${diagnosticId}/${data.next_dimension_id}${resolvedParam}`,
-        );
+        router.replace(`/repair/${diagnosticId}/${data.next_dimension_id}`);
       }
     } catch (err) {
       setSubmitState({ kind: "error", message: (err as Error).message });
