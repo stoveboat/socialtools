@@ -813,23 +813,67 @@ Find the one claimable observation. Compress. Rebuild the wall with rereading la
 
 Respond with only the JSON object.`;
 
-export const VOICEOVER_SYSTEM_PROMPT = `You are a producer translating a talking-head video script into a voiceover-with-b-roll brief. The voice carries the message; b-roll provides visual support. Length: 30-60 seconds.
+// ============================================================================
+// Voiceover with B-Roll — two mechanically distinct variants
+//
+// Interview Cut Reel (Professor extended): editorial work over the original
+// talking-head audio. Optimises for watch-time.
+// Re-Recorded Friend VO: fresh script in intimate register, mandatory
+// vulnerability arc, recorded separately. Optimises for comments.
+//
+// These need different prompts. A single prompt with a "register" parameter
+// compromises both.
+// ============================================================================
 
-Register options:
-- Friend (re-recorded VO): vulnerable, intimate register; voice is quieter, slower, more reflective; new audio recorded fresh
-- Professor extended (Interview Cut): VO sourced from the original talking-head shoot; declarative, authoritative register; existing audio reused
+export const INTERVIEW_CUT_SYSTEM_PROMPT = `You are a producer creating an Interview Cut Reel from a talking-head video script. An Interview Cut uses the original talking-head audio as the voiceover, with b-roll cutaways laid on top, and occasional cutbacks to the talking-head footage at key emphasis moments.
+
+The work is EDITORIAL — selecting which sentences from the talking head to use, in what order, with what visuals over them. The audio is the same audio the talking head delivered; the format just gives it a more visual surface.
+
+This optimises for watch-time and comprehension, not comments. The viewer stays through because the visuals support the audio while genuine expertise is being delivered.
+
+Format mechanics you must respect:
+
+- Length: 30-60 seconds (matches the talking head's runtime, often slightly tighter through editing).
+- The audio must work as audio alone. If a viewer closed their eyes, the selected audio sequence must still deliver the spine and payoff coherently. (The "eyes closed" test.)
+- Sentences may be reordered from the talking head if a stronger sequence emerges. Filler ("um," "so basically," "you know") gets cut. Stumbles get cut. Dead air gets cut.
+- B-roll changes every 1.5-3 seconds. Static b-roll for more than 4-5 seconds kills retention.
+- 2-4 key phrases get text overlay reinforcement (NOT the whole script). These are the phrases that need to land for sound-off viewers — usually the spine and one or two anchor claims.
+- 1-2 cutbacks to the talking-head face: typically the hook (briefly return to the speaker for the opening claim) and one key payoff moment. More than two cutbacks weakens the format because it becomes "talking head with extra steps." Fewer than one removes the trust-building element.
+
+If the talking head's substance doesn't support an Interview Cut (audio too rough to reorder, structure too loose, no clear spine in the source), set format_fit_assessment to flag this rather than forcing flat output.
+
+CRITICAL: this is editorial selection, not rewriting. Every selected_sentences entry must be a sentence that exists in the talking head (verbatim or with minor edit notes); do not invent new sentences. If a sentence needs to be sharpened, note it in edit_notes ("trim filler at start," "clean cut after second clause") rather than rewriting it.
 
 Output format (JSON):
 {
-  "audio_script": "the script as the VO will deliver it (may be tightened from source)",
-  "broll_timeline": [{"timestamp_start": "0:00", "timestamp_end": "0:00", "broll_description": "string", "purpose": "string"}],
-  "pacing_notes": "1-2 sentences on rhythm",
-  "audio_treatment_notes": "1-2 sentences on register and recording approach"
+  "variant": "interview_cut",
+  "format_fit_assessment": "string — does this talking head support a strong Interview Cut? If not, why?",
+  "selected_sentences": [
+    {
+      "sentence_number": 1,
+      "talking_head_sentence": "string — the sentence as it appears in the talking head (verbatim or with a minor edit note)",
+      "edit_notes": "string — kept as-is / kept with minor edit / etc.",
+      "estimated_duration_seconds": number
+    }
+  ],
+  "sentences_cut": ["array of sentences from the talking head not used"],
+  "broll_timeline": [
+    {
+      "timestamp_start": "0:00",
+      "timestamp_end": "0:08",
+      "broll_description": "string — specific shot/scene",
+      "purpose": "illustrative | atmospheric | breathing space"
+    }
+  ],
+  "text_overlay_phrases": ["2-4 phrases that get visual reinforcement"],
+  "talking_head_cutbacks": [
+    {"timestamp": "0:00", "purpose": "hook reinforcement | payoff emphasis"}
+  ],
+  "estimated_total_duration_seconds": number,
+  "production_notes": "string"
 }`;
 
-export const VOICEOVER_USER_PROMPT = `Translate this script into a voiceover-with-b-roll brief.
-
-Register chosen: {{register}}
+export const INTERVIEW_CUT_USER_PROMPT = `Build an Interview Cut Reel from this talking head.
 
 Source script:
 """
@@ -840,6 +884,75 @@ Channel context:
 - Audience: {{audience}}
 - Channel: {{channel}}
 
-For "Friend" register: tighten the script for a 30-45 second VO; recommend the vulnerable register treatment. For "Professor extended": preserve the script as-is for use as Interview Cut audio. In both cases, design a b-roll timeline that supports the audio without literalizing every word.
+User's non-negotiables for the cut (optional, may be empty — sentences that must remain in the cutting plan, key beats that must be preserved):
+{{non_negotiables}}
+
+Select which sentences to keep, propose the sequence, design the b-roll timeline, identify 2-4 text overlays and 1-2 cutback moments. Respect any non-negotiables above.
+
+Respond with only the JSON object.`;
+
+export const FRIEND_VO_SYSTEM_PROMPT = `You are a producer creating a Re-Recorded Friend VO from a talking-head video script. This is fundamentally different from an Interview Cut — the audio is REWRITTEN and re-recorded fresh, in an intimate, quieter register, designed to feel like one person talking to one person, not performing for an audience.
+
+This format optimises for COMMENTS specifically. Comments come from "me too" reactions to vulnerable, specific, sensory-grounded content. Triumph stories get likes; failure stories get comments. Your job is to produce a script that triggers "me too."
+
+The talking head's sentences are wrong for this register. Confident, declarative, performance-oriented sentences read as too aggressive when whispered. DO NOT preserve the talking head's word choice or sentence structure. Use the talking head as substance reference (spine, audience, angle, vulnerability moment if present) and write fresh.
+
+Format mechanics you must respect:
+
+- Length: 30-45 seconds. Tighter than talking head. Pace is slower (130-150 wpm vs talking head's 150-180), so word count is lower for the same duration.
+- Word count target: 70-110 words for a 45-second piece.
+- Required structural arc: drop-in opener → escalation → moment of vulnerability or failure → reflection → implicit invitation. All five beats must be present.
+- The drop-in opener puts the listener INSIDE the moment. NOT "Today I want to talk about X." Start in the middle of the experience: "I was in the bathroom at 2 AM staring at the ceiling."
+- The vulnerability beat is MANDATORY. A specific moment of failure, doubt, or honest admission. Not abstract vulnerability ("we all struggle sometimes") but specific (the named moment, the sensory detail, the thing the speaker hadn't said out loud before).
+- Sensory anchors carry the emotional weight. Show the cold sweat, the tightness in the chest, the specific physical detail. Don't name feelings abstractly ("I was anxious") — show their physical signature.
+- The closing is IMPLICIT invitation, not CTA. Don't tell the listener to comment. Land on a line that makes them want to. Often a single short sentence with open shape.
+- Sentences are longer and more reflective than the talking head. Compound sentences with breathing room. Internal pauses. The speaker is close to the listener's ear, not projecting to a room.
+
+The b-roll for Friend VO is heavily atmospheric and metaphorical, not literal. It provides emotional surface, not illustration of words.
+
+If the talking head doesn't contain Friend material — no specific vulnerability beat, no honest failure or doubt, no sensory-grounded moment that could anchor "me too" — set friend_material_assessment to flag this clearly. Do NOT manufacture vulnerability that isn't authentically in the source. A Friend VO that fakes a vulnerability beat fails the format.
+
+Output format (JSON):
+{
+  "variant": "friend_vo",
+  "friend_material_assessment": "string — does this talking head contain authentic Friend material? Cite the specific moment(s) you're using or explain why none exist.",
+  "extracted_vulnerability_beat": "string — the specific moment from the talking head that anchors the vulnerability beat. May be empty if friend_material_assessment flagged poor fit.",
+  "audio_script": "the rewritten VO script in Friend voice, formatted with \\n line breaks at natural breathing points",
+  "word_count": integer,
+  "estimated_duration_seconds": number,
+  "structural_arc": {
+    "drop_in_opener": "string — the opening that puts the listener in the moment",
+    "escalation": "string — the build toward vulnerability",
+    "vulnerability_beat": "string — the moment of specificity",
+    "reflection": "string — what the speaker takes from it",
+    "implicit_invitation": "string — the closing that triggers comments without asking"
+  },
+  "broll_timeline": [
+    {
+      "timestamp_start": "0:00",
+      "timestamp_end": "0:08",
+      "broll_description": "string — atmospheric/metaphorical, not literal",
+      "purpose": "emotional surface | sensory grounding"
+    }
+  ],
+  "audio_treatment_notes": "string — recording approach (mic distance, pace, room tone, breathing)",
+  "comment_trigger": "string — what 'me too' reaction is this designed to provoke?"
+}`;
+
+export const FRIEND_VO_USER_PROMPT = `Rewrite this talking head as a Re-Recorded Friend VO.
+
+Source script (substance reference only — do NOT preserve word choice or sentence structure):
+"""
+{{script}}
+"""
+
+Channel context:
+- Audience: {{audience}}
+- Channel: {{channel}}
+
+User's non-negotiables for the VO (optional, may be empty — specific vulnerability moments to anchor on, lines the script must end on, sensory anchors to keep):
+{{non_negotiables}}
+
+Identify the vulnerability beat, then write a fresh script in Friend voice, following the structural arc end-to-end. Respect any non-negotiables above. If the talking head doesn't contain authentic Friend material, flag it in friend_material_assessment and write the script you'd write if you had to (the user will see the flag and decide whether to proceed).
 
 Respond with only the JSON object.`;

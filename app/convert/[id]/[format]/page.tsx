@@ -14,6 +14,8 @@ import {
   type CaptionReelBrief,
   type CarouselBrief,
   type DerivationFormat,
+  type FriendVOBrief,
+  type InterviewCutBrief,
   type VoiceoverBrief,
 } from "@/lib/diagnostics/types";
 import { BriefActions } from "./brief-actions";
@@ -119,7 +121,7 @@ export default async function BriefPage({
             pieceId={id}
           />
         ) : (
-          <VoiceoverView brief={content as VoiceoverBrief} />
+          <VoiceoverView brief={content as VoiceoverBrief} pieceId={id} />
         )}
       </main>
     </div>
@@ -307,24 +309,132 @@ function CaptionReelView({
   );
 }
 
-function VoiceoverView({ brief }: { brief: VoiceoverBrief }) {
+function VoiceoverView({
+  brief,
+  pieceId,
+}: {
+  brief: VoiceoverBrief;
+  pieceId: string;
+}) {
+  // Legacy: pre-rewrite voiceover briefs lacked a `variant` discriminator.
+  // Detect by absence and surface a regenerate banner rather than crashing.
+  const variant = (brief as { variant?: string }).variant;
+  if (variant !== "interview_cut" && variant !== "friend_vo") {
+    return (
+      <div className="rounded-lg border bg-amber-50 border-amber-300 p-5 space-y-3">
+        <p className="text-sm">
+          This voiceover brief was generated under the earlier definition of
+          the format (a single shape that conflated the Interview Cut and
+          Re-Recorded Friend VO variants). Voiceover-with-b-roll has since
+          been split into two distinct artifacts.
+        </p>
+        <p className="text-sm">
+          Regenerate the brief from the configure screen — pick whichever
+          variant fits the script.
+        </p>
+        <Link href={`/convert/${pieceId}`}>
+          <Button size="sm">Back to format selection</Button>
+        </Link>
+      </div>
+    );
+  }
+
+  if (brief.variant === "interview_cut") {
+    return <InterviewCutView brief={brief} pieceId={pieceId} />;
+  }
+  return <FriendVOView brief={brief} pieceId={pieceId} />;
+}
+
+function InterviewCutView({
+  brief,
+  pieceId,
+}: {
+  brief: InterviewCutBrief;
+  pieceId: string;
+}) {
   return (
     <div className="space-y-5">
-      <div className="rounded-lg border p-4">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground mb-2">
-          Audio script
-        </p>
-        <p className="leading-relaxed whitespace-pre-wrap">
-          {brief.audio_script}
-        </p>
+      {brief.format_fit_assessment ? (
+        <div className="rounded-md border bg-muted/30 p-4 space-y-1">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+            Format fit
+          </p>
+          <p className="text-sm leading-relaxed">{brief.format_fit_assessment}</p>
+        </div>
+      ) : null}
+
+      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+        <span>{brief.selected_sentences.length} sentences in the cut</span>
+        <span>·</span>
+        <span>
+          ~{brief.estimated_total_duration_seconds.toFixed(1)}s total
+        </span>
       </div>
+
+      <div className="rounded-lg border p-4 space-y-3">
+        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+          Cutting plan
+        </p>
+        <ol className="space-y-3 text-sm">
+          {brief.selected_sentences.map((s) => (
+            <li key={s.sentence_number} className="space-y-1">
+              <p className="leading-relaxed">
+                <span className="font-mono text-xs bg-muted/60 px-1.5 py-0.5 rounded mr-2">
+                  {s.sentence_number}
+                </span>
+                {s.talking_head_sentence}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {s.edit_notes}
+                {s.estimated_duration_seconds
+                  ? ` · ~${s.estimated_duration_seconds.toFixed(1)}s`
+                  : ""}
+              </p>
+            </li>
+          ))}
+        </ol>
+      </div>
+
+      {brief.text_overlay_phrases.length > 0 ? (
+        <div className="rounded-lg border p-4 space-y-2">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+            Text overlay phrases ({brief.text_overlay_phrases.length})
+          </p>
+          <ul className="space-y-1 text-sm">
+            {brief.text_overlay_phrases.map((p, i) => (
+              <li key={i} className="font-medium">
+                &ldquo;{p}&rdquo;
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {brief.talking_head_cutbacks.length > 0 ? (
+        <div className="rounded-lg border p-4 space-y-2">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+            Cutbacks to talking-head footage
+          </p>
+          <ul className="space-y-1 text-sm">
+            {brief.talking_head_cutbacks.map((c, i) => (
+              <li key={i}>
+                <span className="font-mono text-xs bg-muted/60 px-1.5 py-0.5 rounded mr-2">
+                  {c.timestamp}
+                </span>
+                {c.purpose}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       <div className="rounded-lg border p-4 space-y-2">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground mb-1">
+        <p className="text-xs uppercase tracking-wide text-muted-foreground">
           B-roll timeline
         </p>
-        <ul className="space-y-2">
+        <ul className="space-y-2 text-sm">
           {brief.broll_timeline.map((b, i) => (
-            <li key={i} className="text-sm">
+            <li key={i}>
               <span className="font-mono text-xs bg-muted/60 px-1.5 py-0.5 rounded">
                 {b.timestamp_start}–{b.timestamp_end}
               </span>{" "}
@@ -334,16 +444,175 @@ function VoiceoverView({ brief }: { brief: VoiceoverBrief }) {
           ))}
         </ul>
       </div>
-      {brief.pacing_notes ? (
-        <p className="text-sm">
-          <span className="font-medium">Pacing: </span>
-          {brief.pacing_notes}
+
+      {brief.sentences_cut.length > 0 ? (
+        <details className="rounded-md border bg-muted/20 px-4 py-3 text-sm">
+          <summary className="cursor-pointer text-muted-foreground">
+            Sentences cut from the talking head ({brief.sentences_cut.length})
+          </summary>
+          <ul className="mt-3 space-y-2 text-muted-foreground">
+            {brief.sentences_cut.map((s, i) => (
+              <li key={i} className="line-through">
+                {s}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+
+      {brief.production_notes ? (
+        <p className="text-sm text-muted-foreground border-t pt-4">
+          <span className="font-medium">Production notes: </span>
+          {brief.production_notes}
         </p>
       ) : null}
+      <span className="hidden">{pieceId}</span>
+    </div>
+  );
+}
+
+function FriendVOView({
+  brief,
+  pieceId,
+}: {
+  brief: FriendVOBrief;
+  pieceId: string;
+}) {
+  // Honest "no Friend material" fallback — the model said the talking head
+  // doesn't anchor a Friend VO. Surface that to the user instead of
+  // pretending the script works.
+  const hasMaterial = brief.audio_script.trim().length > 0;
+  if (!hasMaterial) {
+    return (
+      <div className="rounded-lg border bg-amber-50 border-amber-300 p-5 space-y-3">
+        <p className="text-sm font-medium text-amber-950">
+          The talking head doesn{"'"}t contain authentic Friend material.
+        </p>
+        {brief.friend_material_assessment ? (
+          <p className="text-sm text-amber-900/90 leading-relaxed">
+            {brief.friend_material_assessment}
+          </p>
+        ) : null}
+        <p className="text-sm text-amber-900/90">
+          Try the Interview Cut variant, or refine the talking head to
+          surface a specific vulnerability moment before regenerating.
+        </p>
+        <Link href={`/convert/${pieceId}`}>
+          <Button size="sm" variant="outline">
+            Back to format selection
+          </Button>
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      {brief.friend_material_assessment ? (
+        <div className="rounded-md border bg-muted/30 p-4 space-y-1">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+            Friend material assessment
+          </p>
+          <p className="text-sm leading-relaxed">
+            {brief.friend_material_assessment}
+          </p>
+        </div>
+      ) : null}
+
+      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+        <span>{brief.word_count} words</span>
+        <span>·</span>
+        <span>
+          ~{brief.estimated_duration_seconds.toFixed(0)}s at 130-150 wpm
+        </span>
+      </div>
+
+      <div className="rounded-lg border bg-background p-6">
+        <p className="text-xs uppercase tracking-wide text-muted-foreground mb-3">
+          Audio script (recorded fresh, intimate register)
+        </p>
+        <pre className="whitespace-pre-wrap font-sans text-base leading-relaxed">
+          {brief.audio_script}
+        </pre>
+      </div>
+
+      <div className="rounded-lg border bg-muted/20 p-5 space-y-4">
+        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+          Structural arc
+        </p>
+        <dl className="space-y-3 text-sm">
+          {brief.structural_arc.drop_in_opener ? (
+            <div>
+              <dt className="font-medium">Drop-in opener</dt>
+              <dd className="text-muted-foreground leading-relaxed">
+                {brief.structural_arc.drop_in_opener}
+              </dd>
+            </div>
+          ) : null}
+          {brief.structural_arc.escalation ? (
+            <div>
+              <dt className="font-medium">Escalation</dt>
+              <dd className="text-muted-foreground leading-relaxed">
+                {brief.structural_arc.escalation}
+              </dd>
+            </div>
+          ) : null}
+          {brief.structural_arc.vulnerability_beat ? (
+            <div>
+              <dt className="font-medium">Vulnerability beat</dt>
+              <dd className="text-muted-foreground leading-relaxed">
+                {brief.structural_arc.vulnerability_beat}
+              </dd>
+            </div>
+          ) : null}
+          {brief.structural_arc.reflection ? (
+            <div>
+              <dt className="font-medium">Reflection</dt>
+              <dd className="text-muted-foreground leading-relaxed">
+                {brief.structural_arc.reflection}
+              </dd>
+            </div>
+          ) : null}
+          {brief.structural_arc.implicit_invitation ? (
+            <div>
+              <dt className="font-medium">Implicit invitation (close)</dt>
+              <dd className="text-muted-foreground leading-relaxed">
+                {brief.structural_arc.implicit_invitation}
+              </dd>
+            </div>
+          ) : null}
+        </dl>
+      </div>
+
+      {brief.broll_timeline.length > 0 ? (
+        <div className="rounded-lg border p-4 space-y-2">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+            B-roll timeline (atmospheric / metaphorical)
+          </p>
+          <ul className="space-y-2 text-sm">
+            {brief.broll_timeline.map((b, i) => (
+              <li key={i}>
+                <span className="font-mono text-xs bg-muted/60 px-1.5 py-0.5 rounded">
+                  {b.timestamp_start}–{b.timestamp_end}
+                </span>{" "}
+                {b.broll_description}
+                <span className="text-muted-foreground"> · {b.purpose}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       {brief.audio_treatment_notes ? (
         <p className="text-sm">
           <span className="font-medium">Audio treatment: </span>
           {brief.audio_treatment_notes}
+        </p>
+      ) : null}
+      {brief.comment_trigger ? (
+        <p className="text-sm text-muted-foreground border-t pt-4">
+          <span className="font-medium">Comment trigger: </span>
+          {brief.comment_trigger}
         </p>
       ) : null}
     </div>

@@ -74,24 +74,119 @@ function captionReelToText(b: CaptionReelBrief): string {
 }
 
 function voiceoverToText(b: VoiceoverBrief, register: string): string {
+  const variant = (b as { variant?: string }).variant;
+  if (variant !== "interview_cut" && variant !== "friend_vo") {
+    return `# Voiceover with B-Roll — ${register}\n\n(Legacy brief in outdated format. Regenerate to get the current artifact.)`;
+  }
+  if (b.variant === "interview_cut") {
+    return interviewCutToText(b);
+  }
+  return friendVOToText(b);
+}
+
+function interviewCutToText(b: import("./types").InterviewCutBrief): string {
   const lines: string[] = [];
-  lines.push(`# Voiceover with B-Roll — ${register}`);
+  lines.push(`# Interview Cut Reel`);
   lines.push("");
-  lines.push(`## Audio script`);
+  if (b.format_fit_assessment) {
+    lines.push(`Format fit: ${b.format_fit_assessment}`);
+    lines.push("");
+  }
+  lines.push(
+    `## Cutting plan (${b.selected_sentences.length} sentences, ~${b.estimated_total_duration_seconds.toFixed(1)}s)`,
+  );
+  for (const s of b.selected_sentences) {
+    lines.push(`${s.sentence_number}. ${s.talking_head_sentence}`);
+    if (s.edit_notes) {
+      lines.push(`   ${s.edit_notes}${s.estimated_duration_seconds ? ` · ~${s.estimated_duration_seconds.toFixed(1)}s` : ""}`);
+    }
+  }
+  if (b.text_overlay_phrases.length > 0) {
+    lines.push("");
+    lines.push(`## Text overlays`);
+    for (const p of b.text_overlay_phrases) lines.push(`- "${p}"`);
+  }
+  if (b.talking_head_cutbacks.length > 0) {
+    lines.push("");
+    lines.push(`## Talking-head cutbacks`);
+    for (const c of b.talking_head_cutbacks) {
+      lines.push(`[${c.timestamp}] ${c.purpose}`);
+    }
+  }
+  if (b.broll_timeline.length > 0) {
+    lines.push("");
+    lines.push(`## B-roll timeline`);
+    for (const e of b.broll_timeline) {
+      lines.push(
+        `[${e.timestamp_start}–${e.timestamp_end}] ${e.broll_description} — ${e.purpose}`,
+      );
+    }
+  }
+  if (b.sentences_cut.length > 0) {
+    lines.push("");
+    lines.push(`## Sentences cut`);
+    for (const s of b.sentences_cut) lines.push(`- ${s}`);
+  }
+  if (b.production_notes) {
+    lines.push("");
+    lines.push(`Production notes: ${b.production_notes}`);
+  }
+  return lines.join("\n");
+}
+
+function friendVOToText(b: import("./types").FriendVOBrief): string {
+  const lines: string[] = [];
+  lines.push(`# Re-Recorded Friend VO`);
+  lines.push("");
+  if (b.friend_material_assessment) {
+    lines.push(`Friend material: ${b.friend_material_assessment}`);
+    lines.push("");
+  }
+  if (!b.audio_script.trim()) {
+    lines.push(
+      "(no script — talking head doesn't contain authentic Friend material)",
+    );
+    return lines.join("\n");
+  }
+  lines.push(
+    `## Audio script (${b.word_count} words, ~${b.estimated_duration_seconds.toFixed(0)}s)`,
+  );
+  lines.push("");
   lines.push(b.audio_script);
   lines.push("");
-  lines.push(`## B-roll timeline`);
-  for (const e of b.broll_timeline) {
+  lines.push(`## Structural arc`);
+  if (b.structural_arc.drop_in_opener) {
+    lines.push(`- Drop-in opener: ${b.structural_arc.drop_in_opener}`);
+  }
+  if (b.structural_arc.escalation) {
+    lines.push(`- Escalation: ${b.structural_arc.escalation}`);
+  }
+  if (b.structural_arc.vulnerability_beat) {
+    lines.push(`- Vulnerability beat: ${b.structural_arc.vulnerability_beat}`);
+  }
+  if (b.structural_arc.reflection) {
+    lines.push(`- Reflection: ${b.structural_arc.reflection}`);
+  }
+  if (b.structural_arc.implicit_invitation) {
     lines.push(
-      `[${e.timestamp_start}–${e.timestamp_end}] ${e.broll_description} — ${e.purpose}`,
+      `- Implicit invitation: ${b.structural_arc.implicit_invitation}`,
     );
   }
-  lines.push("");
-  if (b.pacing_notes) {
-    lines.push(`Pacing: ${b.pacing_notes}`);
+  if (b.broll_timeline.length > 0) {
+    lines.push("");
+    lines.push(`## B-roll timeline (atmospheric)`);
+    for (const e of b.broll_timeline) {
+      lines.push(
+        `[${e.timestamp_start}–${e.timestamp_end}] ${e.broll_description} — ${e.purpose}`,
+      );
+    }
   }
   if (b.audio_treatment_notes) {
+    lines.push("");
     lines.push(`Audio treatment: ${b.audio_treatment_notes}`);
+  }
+  if (b.comment_trigger) {
+    lines.push(`Comment trigger: ${b.comment_trigger}`);
   }
   return lines.join("\n");
 }

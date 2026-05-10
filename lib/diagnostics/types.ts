@@ -92,17 +92,62 @@ export interface CaptionReelBrief {
   production_notes: string;
 }
 
-export interface VoiceoverBrief {
-  audio_script: string;
-  broll_timeline: {
-    timestamp_start: string;
-    timestamp_end: string;
-    broll_description: string;
-    purpose: string;
-  }[];
-  pacing_notes: string;
-  audio_treatment_notes: string;
+// Voiceover-with-b-roll has two mechanically distinct variants. They produce
+// different artifacts (a cutting plan vs. a rewritten script) and optimise
+// for different metrics (watch-time vs. comments). The `variant` field
+// discriminates the union.
+
+export interface VoiceoverBrollSegment {
+  timestamp_start: string;
+  timestamp_end: string;
+  broll_description: string;
+  purpose: string;
 }
+
+// Interview Cut Reel: original talking-head audio reused, with b-roll on
+// top and 1-2 cutbacks to the talking-head face. The work is editorial —
+// pick which sentences to keep and in what order, propose b-roll, identify
+// 2-4 phrases for text overlay. Optimises for watch-time.
+export interface InterviewCutBrief {
+  variant: "interview_cut";
+  format_fit_assessment: string;
+  selected_sentences: {
+    sentence_number: number;
+    talking_head_sentence: string;
+    edit_notes: string;
+    estimated_duration_seconds: number;
+  }[];
+  sentences_cut: string[];
+  broll_timeline: VoiceoverBrollSegment[];
+  text_overlay_phrases: string[];
+  talking_head_cutbacks: { timestamp: string; purpose: string }[];
+  estimated_total_duration_seconds: number;
+  production_notes: string;
+}
+
+// Re-Recorded Friend VO: fresh script in intimate register, recorded
+// separately. Mandatory drop-in opener + vulnerability beat + implicit
+// invitation closer. Atmospheric/metaphorical b-roll. Optimises for comments.
+export interface FriendVOBrief {
+  variant: "friend_vo";
+  friend_material_assessment: string;
+  extracted_vulnerability_beat: string;
+  audio_script: string;
+  word_count: number;
+  estimated_duration_seconds: number;
+  structural_arc: {
+    drop_in_opener: string;
+    escalation: string;
+    vulnerability_beat: string;
+    reflection: string;
+    implicit_invitation: string;
+  };
+  broll_timeline: VoiceoverBrollSegment[];
+  audio_treatment_notes: string;
+  comment_trigger: string;
+}
+
+export type VoiceoverBrief = InterviewCutBrief | FriendVOBrief;
 
 export type BriefContent = CarouselBrief | CaptionReelBrief | VoiceoverBrief;
 
@@ -145,13 +190,17 @@ export const REGISTERS_BY_FORMAT: Record<
   voiceover_broll: [
     {
       name: "Friend (re-recorded VO)",
-      oneliner: "New audio, recorded soft and slow. Vulnerable register.",
-      example: "Quieter delivery, longer pauses, more reflective tone. Re-record the audio.",
+      oneliner:
+        "Fresh, intimate script you record separately. Optimises for comments.",
+      example:
+        "70-110 words for ~45s. Drop-in opener, vulnerability beat, implicit invitation close. Best for confessional content where the talking head has a real failure or doubt to anchor.",
     },
     {
       name: "Professor extended (Interview Cut)",
-      oneliner: "Reuse the original talking-head audio. Declarative and authoritative.",
-      example: "Cut the same audio over b-roll. The voice stays sharp and certain.",
+      oneliner:
+        "Editorial cutting plan over your existing talking-head audio. Optimises for watch-time.",
+      example:
+        "Select and re-order the talking head's strongest sentences. B-roll changes every 1.5-3s. 2-4 text overlays. 1-2 cutbacks to face. Best for explainer or expertise content.",
     },
   ],
 };

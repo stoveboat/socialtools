@@ -67,14 +67,14 @@ export async function POST(
     topic_summary: ctx?.topic_summary || "",
   };
 
-  // Caption reel passes non-negotiables in the register-shaped slot of the
-  // generator signature; other formats pass their register name.
-  const directional =
-    format === "caption_reel" ? non_negotiables : register;
-
   let brief;
   try {
-    brief = await generateBrief(format, directional, script, context);
+    brief = await generateBrief(
+      format,
+      { register, non_negotiables },
+      script,
+      context,
+    );
   } catch (err) {
     return NextResponse.json(
       { error: "generation_failed", detail: (err as Error).message },
