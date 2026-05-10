@@ -5,7 +5,11 @@ import { GradeStrip, type GradeRow } from "@/components/grade-strip";
 import { createClient } from "@/lib/supabase/server";
 import { loadDiagnosticOwner } from "@/lib/db/repair";
 import { DIMENSION_RATIONALE } from "@/lib/diagnostics/dimension-rationale";
-import { computeQueue } from "@/lib/diagnostics/repair-order";
+import {
+  computeQueue,
+  getTier,
+  getTierLabel,
+} from "@/lib/diagnostics/repair-order";
 import type { DimensionId, Grade } from "@/lib/diagnostics/types";
 import { RepairCard } from "./repair-card";
 
@@ -113,7 +117,13 @@ export default async function RepairCardPage({
 
         <div className="grid gap-8 lg:grid-cols-[2fr_3fr]">
           <aside className="space-y-4">
-            <h1 className="text-xl font-semibold">{thisDim.dimension_name}</h1>
+            <div className="space-y-1">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                Tier {getTier(dimensionId).tier} ·{" "}
+                {getTierLabel(dimensionId)}
+              </p>
+              <h1 className="text-xl font-semibold">{thisDim.dimension_name}</h1>
+            </div>
             {rationale ? (
               <div className="space-y-2">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">
@@ -124,8 +134,10 @@ export default async function RepairCardPage({
             ) : null}
             <p className="text-xs text-muted-foreground border-t pt-3">
               The strip above is regraded after every fix. Fixes are ordered by
-              where in the script they land — the queue starts at the top of
-              the script and works down.
+              dependency tier — Foundation first (Spine, Audience,
+              Positioning), then Engagement Architecture, then Structural
+              Execution, then Surface Execution. Higher tiers reshape what
+              lower tiers need to do.
             </p>
           </aside>
 

@@ -9,7 +9,11 @@ import {
   loadLatestDiagnosticAny,
   loadLatestSourceDiagnostic,
 } from "@/lib/db/diagnostic";
-import { orderByPosition } from "@/lib/diagnostics/repair-order";
+import {
+  getTier,
+  getTierLabel,
+  orderByTier,
+} from "@/lib/diagnostics/repair-order";
 import type { DimensionGrade, Grade } from "@/lib/diagnostics/types";
 
 const GRADE_RANK: Record<Grade, number> = { A: 4, B: 3, C: 2, D: 1, F: 0 };
@@ -91,9 +95,10 @@ export default async function SummaryPage({
   const sourceDiag = await loadLatestSourceDiagnostic(id);
   const isRefined = latestDiag.script_version === "refined";
 
-  // Order weak dims by where in the script the fix lands (Hook → Payoff).
-  // The first one becomes the "recommended next" highlight.
-  const weakInOrder = orderByPosition(
+  // Order weak dims by dependency tier (Foundation → Engagement Architecture
+  // → Structural Execution → Surface Execution). The first one becomes the
+  // "recommended next" highlight.
+  const weakInOrder = orderByTier(
     latestDiag.grades.filter((g) => isWeak(g.grade as Grade)),
   );
   const recommendedDimId = weakInOrder[0]?.dimension_id ?? null;
@@ -222,12 +227,19 @@ export default async function SummaryPage({
             {weakInOrder.length > 0 ? (
               <div className="space-y-3">
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                  Required repairs · ordered top to bottom of script
+                  Required repairs · ordered by dependency tier
                 </h2>
+                <p className="text-xs text-muted-foreground -mt-2">
+                  Foundation dimensions first, surface dimensions last.
+                  Higher-tier fixes change what lower-tier fixes should do, so
+                  fix from the top down.
+                </p>
                 <ul className="space-y-3">
                   {weakInOrder.map((g) => {
                     const isRecommended =
                       g.dimension_id === recommendedDimId;
+                    const tier = getTier(g.dimension_id);
+                    const tierLabel = getTierLabel(g.dimension_id);
                     return (
                       <li
                         key={g.dimension_id}
@@ -242,6 +254,9 @@ export default async function SummaryPage({
                             <GradeBadge grade={g.grade as Grade} />
                             <span className="font-semibold">
                               {g.dimension_name}
+                            </span>
+                            <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                              Tier {tier.tier} · {tierLabel}
                             </span>
                             {isRecommended ? (
                               <span className="inline-flex items-center gap-1 rounded-full border border-foreground/40 bg-background px-2 py-0.5 text-xs font-medium">
