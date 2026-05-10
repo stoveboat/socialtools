@@ -291,6 +291,34 @@ export function RepairCard({
           Skip this dimension
         </Button>
       </div>
+
+      <details className="rounded-md border bg-muted/20 px-4 py-3 text-sm">
+        <summary className="cursor-pointer text-muted-foreground">
+          None of these fix the actual problem?
+        </summary>
+        <div className="mt-3 space-y-2 text-muted-foreground leading-relaxed">
+          <p>
+            Surgical fixes have limits. If a dimension fails because of a
+            structural issue — the body contradicting the spine, two competing
+            closings, an open that promises something the script never delivers
+            — the right candidate may need a bigger rewrite than this format
+            can express.
+          </p>
+          <p>
+            What usually works:{" "}
+            <strong>skip this dimension and fix others first</strong>. Spine
+            often resolves once Structure does; Tension often resolves once
+            Hook does. After each fix the script is fully re-graded, so come
+            back to this dimension later and the recommended candidates will
+            be different.
+          </p>
+          <p>
+            For scripts that need a wholesale rebuild around the strongest
+            seed, Skeleton Mode is the right tool — it{"'"}s coming in a later
+            build step.
+          </p>
+        </div>
+      </details>
     </div>
   );
 }

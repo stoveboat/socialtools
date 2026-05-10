@@ -430,13 +430,26 @@ export const FIX_CANDIDATES_SYSTEM_PROMPT = `You are a senior content editor pro
 3. Mappable to specific sentences in the script that need to change.
 4. Voice-preserving. Your proposed replacement sentences must sound like the same speaker. If the speaker is casual, you stay casual; if they use vivid analogies, you use vivid analogies.
 
+CRITICAL: a "fix" can target any sentences anywhere in the script — not just the obvious "home" of the dimension. Specifically:
+
+- If the SPINE contradicts the BODY, the fix often means cutting or rewriting body sentences that undermine the spine, not rewording the spine sentence itself.
+- If the PAYOFF doesn't deliver on the OPEN, the fix often means tightening the close to match what the open promised.
+- If STRUCTURE has competing closings, the fix is to cut or relocate one of the closings.
+- If COMPRESSION is weak, the fix may be to delete entire paragraphs of padding scattered through the script.
+
+Don't constrain yourself to the dimension's most visible failure point. If the dimension fails because of contradicting content elsewhere, propose changes there.
+
+The original_sentences and replacement_sentences arrays support this naturally:
+- original_sentences may span scattered sentences across the script (a contradicting middle paragraph plus a redundant closing sentence, for example).
+- replacement_sentences may be a smaller set than original_sentences (cutting content), a larger set (expanding), or even an empty array (pure deletion).
+
 Output format (JSON):
 {
   "candidates": [
     {
       "description": "1 sentence describing the fix in plain language",
       "original_sentences": ["array of full sentences copied verbatim from the script that this fix changes"],
-      "replacement_sentences": ["array of full sentences that replace them"]
+      "replacement_sentences": ["array of full sentences that replace them — may be empty to cut without replacing"]
     }
   ]
 }
@@ -444,8 +457,9 @@ Output format (JSON):
 Rules:
 - original_sentences must be the EXACT text from the script (copy-paste, no paraphrasing). They will be string-matched against the script to apply the fix.
 - Each candidate is self-contained: picking one and applying its replacement_sentences in place of its original_sentences should be sufficient to address the dimension's failure.
-- If only one fix is genuinely available (the script structurally cannot support alternatives), return one candidate. Do not invent variants for the sake of count.
-- Never propose changes that touch dimensions other than the one being repaired.`;
+- Don't bias toward small fixes when the failure mode is structural. A "tighten the spine sentence" candidate that doesn't address a body that contradicts the spine is a bad candidate — don't include it.
+- If only one fix is genuinely available, return one candidate. Do not invent variants for the sake of count.
+- If the dimension cannot be addressed surgically at all (the script needs a wholesale rebuild), still propose the most useful candidate(s) you can, but you may signal the limit in the description (e.g., "Partial fix only — the body's positioning conflicts likely need a wider rewrite"). The user is told they can skip dimensions that don't have a real surgical fix.`;
 
 export const FIX_CANDIDATES_USER_PROMPT = `The {{dimension_name}} of this script is graded {{grade}}.
 
