@@ -14,16 +14,24 @@ export async function SiteHeader() {
         Script Diagnostic Tool
       </Link>
       {user ? (
-        <form
-          action="/auth/signout"
-          method="post"
-          className="flex items-center gap-3"
-        >
-          <span className="text-sm text-muted-foreground">{user.email}</span>
-          <Button type="submit" variant="outline" size="sm">
-            Sign out
-          </Button>
-        </form>
+        <div className="flex items-center gap-4">
+          <Link
+            href="/pieces"
+            className="text-sm underline text-muted-foreground"
+          >
+            My pieces
+          </Link>
+          <form
+            action="/auth/signout"
+            method="post"
+            className="flex items-center gap-3"
+          >
+            <span className="text-sm text-muted-foreground">{user.email}</span>
+            <Button type="submit" variant="outline" size="sm">
+              Sign out
+            </Button>
+          </form>
+        </div>
       ) : (
         <Link href="/login">
           <Button size="sm">Sign in</Button>

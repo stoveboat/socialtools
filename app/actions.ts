@@ -70,5 +70,19 @@ export async function analyzeScript(formData: FormData) {
     );
   }
 
+  // Default the piece title to the topic_summary for the My Pieces list.
+  // Falls back to "Untitled piece" if the topic read came back empty.
+  const titleSource = phase0.topic_summary?.trim() ?? "";
+  if (titleSource) {
+    const truncated =
+      titleSource.length > 80
+        ? titleSource.slice(0, 80).replace(/\s+\S*$/, "") + "..."
+        : titleSource;
+    await supabase
+      .from("pieces")
+      .update({ title: truncated })
+      .eq("id", piece.id);
+  }
+
   redirect(`/phase0/${piece.id}`);
 }
