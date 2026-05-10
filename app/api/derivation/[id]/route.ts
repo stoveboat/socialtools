@@ -19,11 +19,15 @@ export async function POST(
   const body = await request.json().catch(() => ({}));
   const format = body.format as DerivationFormat;
   const register = String(body.register ?? "").trim();
+  const non_negotiables = String(body.non_negotiables ?? "").trim();
 
   if (!VALID_FORMATS.has(format)) {
     return NextResponse.json({ error: "invalid_format" }, { status: 400 });
   }
-  if (!register) {
+  // Caption reel has no register concept — it takes optional non-negotiables
+  // text and uses a constant register marker for the schema column. Other
+  // formats still require a register choice.
+  if (format !== "caption_reel" && !register) {
     return NextResponse.json({ error: "register_required" }, { status: 400 });
   }
 
@@ -63,9 +67,14 @@ export async function POST(
     topic_summary: ctx?.topic_summary || "",
   };
 
+  // Caption reel passes non-negotiables in the register-shaped slot of the
+  // generator signature; other formats pass their register name.
+  const directional =
+    format === "caption_reel" ? non_negotiables : register;
+
   let brief;
   try {
-    brief = await generateBrief(format, register, script, context);
+    brief = await generateBrief(format, directional, script, context);
   } catch (err) {
     return NextResponse.json(
       { error: "generation_failed", detail: (err as Error).message },
@@ -73,8 +82,6 @@ export async function POST(
     );
   }
 
-  // Mark any existing active brief for this piece+format as discarded so the
-  // unique active-index in the schema doesn't conflict.
   await supabase
     .from("derivation_briefs")
     .update({ status: "discarded" })
@@ -82,13 +89,17 @@ export async function POST(
     .eq("format", format)
     .neq("status", "discarded");
 
+  // Caption reel has no register; store a constant marker so the schema's
+  // not-null register column is satisfied and the audit trail is honest.
+  const storedRegister = format === "caption_reel" ? "wall" : register;
+
   const { data: row, error: insertError } = await supabase
     .from("derivation_briefs")
     .insert({
       piece_id: pieceId,
       source_script_version: useRefined ? "refined" : "source",
       format,
-      register,
+      register: storedRegister,
       brief_content: brief,
       status: "generated",
     })

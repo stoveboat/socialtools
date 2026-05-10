@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { SiteHeader } from "@/components/header";
+import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
 import {
   briefFilename,
@@ -75,19 +76,25 @@ export default async function BriefPage({
 
         <header className="space-y-1">
           <p className="text-sm text-muted-foreground">
-            {FORMAT_LABEL[fmt]} — {brief.register}
+            {fmt === "caption_reel"
+              ? FORMAT_LABEL[fmt]
+              : `${FORMAT_LABEL[fmt]} — ${brief.register}`}
           </p>
           <h1 className="text-2xl font-semibold tracking-tight">
             Production brief
           </h1>
-          {(() => {
-            const opt = REGISTERS_BY_FORMAT[fmt].find(
-              (o) => o.name === brief.register,
-            );
-            return opt ? (
-              <p className="text-sm text-muted-foreground">{opt.oneliner}</p>
-            ) : null;
-          })()}
+          {fmt !== "caption_reel"
+            ? (() => {
+                const opt = REGISTERS_BY_FORMAT[fmt].find(
+                  (o) => o.name === brief.register,
+                );
+                return opt ? (
+                  <p className="text-sm text-muted-foreground">
+                    {opt.oneliner}
+                  </p>
+                ) : null;
+              })()
+            : null}
           {brief.status === "final" ? (
             <p className="text-xs inline-block mt-2 rounded-md bg-emerald-50 text-emerald-900 px-2 py-1">
               Marked final
@@ -107,7 +114,10 @@ export default async function BriefPage({
         {fmt === "carousel" ? (
           <CarouselView brief={content as CarouselBrief} />
         ) : fmt === "caption_reel" ? (
-          <CaptionReelView brief={content as CaptionReelBrief} />
+          <CaptionReelView
+            brief={content as CaptionReelBrief}
+            pieceId={id}
+          />
         ) : (
           <VoiceoverView brief={content as VoiceoverBrief} />
         )}
@@ -159,27 +169,134 @@ function Slide({
   );
 }
 
-function CaptionReelView({ brief }: { brief: CaptionReelBrief }) {
+function CaptionReelView({
+  brief,
+  pieceId,
+}: {
+  brief: CaptionReelBrief;
+  pieceId: string;
+}) {
+  // Detect legacy shape: old briefs were stored as { text_cards, ... }
+  // before the wall-of-text redefinition. Accept the JSONB but show a
+  // regenerate prompt rather than rendering broken UI.
+  const legacy =
+    "text_cards" in (brief as unknown as Record<string, unknown>);
+  if (legacy) {
+    return (
+      <div className="rounded-lg border bg-amber-50 border-amber-300 p-5 space-y-3">
+        <p className="text-sm">
+          This caption-reel brief was generated under an earlier definition
+          of the format (a sequence of timed text cards). The format has
+          since been redefined as a 7-second looping wall of text.
+        </p>
+        <p className="text-sm">
+          Regenerate the brief from the configure screen to get the new
+          wall format.
+        </p>
+        <Link href={`/convert/${pieceId}`}>
+          <Button size="sm">Back to format selection</Button>
+        </Link>
+      </div>
+    );
+  }
+
+  if (!brief.claimable_observation_found) {
+    return (
+      <div className="rounded-lg border bg-amber-50 border-amber-300 p-5 space-y-3">
+        <p className="text-sm font-medium text-amber-950">
+          This script doesn{"'"}t have a claimable observation strong enough
+          to anchor a caption-reel wall.
+        </p>
+        {brief.claimable_observation_explanation ? (
+          <p className="text-sm text-amber-900/90 leading-relaxed">
+            {brief.claimable_observation_explanation}
+          </p>
+        ) : null}
+        <p className="text-sm text-amber-900/90">
+          Try the carousel or voiceover format, or refine the talking head
+          to surface one specific claim before regenerating.
+        </p>
+        <Link href={`/convert/${pieceId}`}>
+          <Button size="sm" variant="outline">
+            Back to format selection
+          </Button>
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
-      {brief.music_recommendation ? (
-        <p className="text-sm rounded-md bg-muted/40 px-3 py-2">
-          <span className="font-medium">Music: </span>
-          {brief.music_recommendation}
+      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+        <span>{brief.word_count} words</span>
+        <span>·</span>
+        <span>~{brief.estimated_read_time_seconds.toFixed(1)}s to read</span>
+        <span>·</span>
+        <span>looping at 7s</span>
+      </div>
+
+      <div className="rounded-lg border bg-background p-8">
+        <pre className="whitespace-pre-wrap font-sans text-xl leading-relaxed text-center">
+          {brief.wall_text}
+        </pre>
+      </div>
+
+      <div className="rounded-lg border bg-muted/20 p-5 space-y-4">
+        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+          Why this works
         </p>
-      ) : null}
-      {brief.text_cards.map((c) => (
-        <div key={c.card_number} className="rounded-lg border p-4 space-y-2">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">
-            Card {c.card_number} — {c.duration_seconds}s
-          </p>
-          <p className="text-lg font-medium leading-snug">{c.text}</p>
-          <p className="text-sm text-muted-foreground">
-            <span className="font-medium">B-roll: </span>
-            {c.broll_suggestion}
-          </p>
-        </div>
-      ))}
+        <dl className="space-y-3 text-sm">
+          {brief.claimable_observation_explanation ? (
+            <div>
+              <dt className="font-medium">Claimable observation</dt>
+              <dd className="text-muted-foreground leading-relaxed">
+                {brief.claimable_observation_explanation}
+              </dd>
+            </div>
+          ) : null}
+          {brief.first_line_function ? (
+            <div>
+              <dt className="font-medium">First line function</dt>
+              <dd className="text-muted-foreground leading-relaxed">
+                {brief.first_line_function}
+              </dd>
+            </div>
+          ) : null}
+          {brief.rereading_layers ? (
+            <div>
+              <dt className="font-medium">Rereading layer</dt>
+              <dd className="text-muted-foreground leading-relaxed">
+                {brief.rereading_layers}
+              </dd>
+            </div>
+          ) : null}
+          {brief.share_trigger ? (
+            <div>
+              <dt className="font-medium">Share trigger</dt>
+              <dd className="text-muted-foreground leading-relaxed">
+                {brief.share_trigger}
+              </dd>
+            </div>
+          ) : null}
+          {brief.comment_trigger ? (
+            <div>
+              <dt className="font-medium">Comment trigger</dt>
+              <dd className="text-muted-foreground leading-relaxed">
+                {brief.comment_trigger}
+              </dd>
+            </div>
+          ) : null}
+          {brief.screenshot_line ? (
+            <div>
+              <dt className="font-medium">Screenshot line</dt>
+              <dd className="text-muted-foreground leading-relaxed italic">
+                &ldquo;{brief.screenshot_line}&rdquo;
+              </dd>
+            </div>
+          ) : null}
+        </dl>
+      </div>
+
       {brief.production_notes ? (
         <p className="text-sm text-muted-foreground border-t pt-4">
           <span className="font-medium">Production notes: </span>

@@ -732,23 +732,70 @@ Produce 5-8 slides total. Use the script's actual content and word choices where
 
 Respond with only the JSON object.`;
 
-export const CAPTION_REEL_SYSTEM_PROMPT = `You are a producer translating a talking-head video script into a caption reel brief. A caption reel is a silent-friendly video where text overlays carry the message and b-roll provides visual context. Length: 15-30 seconds, 3-8 text cards.
+// Caption reel — wall-of-text loop format
+//
+// A 7-second looping vertical video where the entire visual surface is a
+// wall of text (15-25 words target, up to 35-40). Reading takes 10-15
+// seconds; the loop forces rereading. The format succeeds on three axes
+// simultaneously: shareability, commentability, rereadability. It is NOT
+// a video with text overlay and it is NOT a card-by-card structure — the
+// wall is one continuous block.
+export const CAPTION_REEL_SYSTEM_PROMPT = `You are a producer creating a caption reel from a talking-head video script. A caption reel in this product is a specific format: a 7-second looping vertical video where the entire visual surface is a wall of text (15-25 words, sometimes up to 35-40). The text takes 10-15 seconds to read. The video loops continuously, forcing the viewer to either commit to reading it or scroll past.
 
-Register options for caption reels:
-- Mirror: relatable POV scenario ("when you finally...")
-- Mirror with sharpened tension: contrarian observation that names a wrong common belief
-- Friend: vulnerable text-driven confessional
+The format succeeds on three axes simultaneously:
+
+1. SHAREABILITY — the text names something specific enough that a viewer reading it immediately thinks of one specific person in their life who needs to see it. The reader sends it. Generic insights don't share; personal-feeling specifics do.
+
+2. COMMENTABILITY — the text makes a claim specific enough to claim, disagree with, or add to. The reader comments to agree publicly, push back, or contribute their own version.
+
+3. REREADABILITY — the text uses compression and implication, not explanation. It says less than it means. The reader works out the meaning across the loops. A line that's fully understood on first read is wasted on this format.
+
+To convert a talking head into this format, follow these steps:
+
+STEP 1: Find the claimable observation in the talking head.
+Identify the one observation in the script that names something specific about a particular kind of person or situation, that someone could send to a specific friend, and that someone could agree with, disagree with, or add to. Most strong talking heads have one. If the script has none — if its substance is purely informational with no claimable observation — flag this in the output. Do not force a caption reel from a script that doesn't have the right material.
+
+STEP 2: Compress to wall length.
+Target: 15-25 words total for the wall. Can extend to 35-40 if necessary. Tighter is better — the looping mechanic rewards density.
+
+The wall is one continuous block of text. Not bullet points. Not numbered lists. A paragraph-shaped block, with line breaks at thought boundaries to create reading rhythm.
+
+STEP 3: Build in rereading layers.
+Use these techniques:
+- Implication over explanation: state conclusions without showing work.
+- Specific noun choices that imply context (e.g., "the friend who texts back at 11 PM" — seven words that imply a whole relationship).
+- Concrete details that anchor abstract claims (e.g., "the planner you bought in January").
+- Counterintuitive structure that surprises the reader on first read and confirms on second read.
+
+STEP 4: End on the screenshottable line.
+The wall ends with the line a viewer would screenshot or quote. This is the quotable form of the spine — often the only line that survives extreme compression. Build the rest of the wall to set up this closing line.
+
+STEP 5: Format for visual rhythm.
+Line breaks at thought boundaries. Varied line lengths. The first line pulls the reader in (mini-hook function). The last line is the screenshot line.
+
+CRITICAL CONSTRAINTS:
+- Do not preserve the talking head's word choice, sentence structure, or pacing. The talking head is reference substance only.
+- Most of the talking head's content will be dropped. The wall captures one observation, not a summary.
+- Do not write in bullet points or numbered lists. The wall is continuous text.
+- Do not write more than 40 words for the wall. The format breaks past that length.
+- If the talking head doesn't contain a claimable observation, set claimable_observation_found=false and explain in claimable_observation_explanation. Leave wall_text and the trigger fields as empty strings rather than forcing flat content.
 
 Output format (JSON):
 {
-  "text_cards": [{"card_number": 1, "text": "string (4-12 words)", "duration_seconds": 3.0, "broll_suggestion": "string"}],
-  "music_recommendation": "string describing the kind of music bed",
-  "production_notes": "1-2 sentences on pacing and visual treatment"
+  "claimable_observation_found": true | false,
+  "claimable_observation_explanation": "string identifying which observation in the talking head is being used and why it fits the format — or, if false, why the script can't anchor a wall",
+  "wall_text": "string — the full wall, 15-25 words target, with \\n line breaks at thought boundaries",
+  "word_count": integer (count of words in wall_text),
+  "estimated_read_time_seconds": number (approximate, words / 3),
+  "screenshot_line": "string — the closing line designed to be quoted",
+  "first_line_function": "string — what the first line is doing to pull the reader in",
+  "rereading_layers": "string — what the rereading produces (what the reader works out on second/third pass)",
+  "share_trigger": "string — what specific person/situation a viewer might think of",
+  "comment_trigger": "string — what reaction the wall is designed to provoke (agreement / disagreement / additive)",
+  "production_notes": "string — visual register, font/style recommendations, music if any"
 }`;
 
-export const CAPTION_REEL_USER_PROMPT = `Translate this script into a caption reel brief.
-
-Register chosen: {{register}}
+export const CAPTION_REEL_USER_PROMPT = `Convert this talking head into a caption reel wall.
 
 Source script:
 """
@@ -759,7 +806,10 @@ Channel context:
 - Audience: {{audience}}
 - Channel: {{channel}}
 
-Each text card must be a complete thought that lands silently. No voiceover. Use the script's spine and key beats as the source material. Aim for 3-8 cards total.
+User's non-negotiables for the wall (optional, may be empty — phrases the wall must include, lines it must end on, or directives like "must end on the permission line"):
+{{non_negotiables}}
+
+Find the one claimable observation. Compress. Rebuild the wall with rereading layers. End on the screenshottable line. Respect any non-negotiables above.
 
 Respond with only the JSON object.`;
 

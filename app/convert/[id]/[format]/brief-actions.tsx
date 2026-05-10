@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Textarea } from "@/components/ui/textarea";
 import {
   REGISTERS_BY_FORMAT,
   type DerivationFormat,
@@ -30,6 +31,7 @@ export function BriefActions({
   const router = useRouter();
   const [showRegen, setShowRegen] = useState(false);
   const [register, setRegister] = useState(currentRegister);
+  const [nonNegotiables, setNonNegotiables] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -61,14 +63,22 @@ export function BriefActions({
     setPending(true);
     setError(null);
     try {
+      const body: Record<string, unknown> = { format };
+      if (format === "caption_reel") {
+        body.non_negotiables = nonNegotiables.trim();
+      } else {
+        body.register = register;
+      }
       const res = await fetch(`/api/derivation/${pieceId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ format, register }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.detail || body.error || `HTTP ${res.status}`);
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(
+          errBody.detail || errBody.error || `HTTP ${res.status}`,
+        );
       }
       router.refresh();
       setShowRegen(false);
@@ -96,6 +106,11 @@ export function BriefActions({
     }
   };
 
+  const regenLabel =
+    format === "caption_reel"
+      ? "Regenerate with new non-negotiables"
+      : "Regenerate with different angle";
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
@@ -110,7 +125,7 @@ export function BriefActions({
           variant="outline"
           disabled={pending}
         >
-          Regenerate with different angle
+          {regenLabel}
         </Button>
         <Button onClick={markFinal} disabled={marked}>
           {marked ? "Marked final" : "Mark as final"}
@@ -119,36 +134,62 @@ export function BriefActions({
 
       {showRegen ? (
         <div className="rounded-lg border p-4 space-y-3">
-          <p className="text-sm font-medium">Pick a different angle:</p>
-          <RadioGroup
-            value={register}
-            onValueChange={setRegister}
-            className="space-y-2"
-          >
-            {REGISTERS_BY_FORMAT[format].map((opt) => (
-              <Label
-                key={opt.name}
-                htmlFor={`regen-${opt.name}`}
-                className={`flex items-start gap-3 rounded-md border p-3 cursor-pointer transition ${
-                  register === opt.name
-                    ? "border-foreground bg-muted/40"
-                    : "hover:bg-muted/20"
-                }`}
+          {format === "caption_reel" ? (
+            <>
+              <p className="text-sm font-medium">
+                Add non-negotiables for the next attempt
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Phrases the wall must include, lines it must end on, or
+                directives. Leave blank to let the model try a different
+                approach freely.
+              </p>
+              <Textarea
+                rows={3}
+                value={nonNegotiables}
+                onChange={(e) => setNonNegotiables(e.target.value)}
+                placeholder={`e.g. "must end on: 'you don't need a planner. you need permission to keep yours simple.'"`}
+              />
+            </>
+          ) : (
+            <>
+              <p className="text-sm font-medium">Pick a different angle:</p>
+              <RadioGroup
+                value={register}
+                onValueChange={setRegister}
+                className="space-y-2"
               >
-                <RadioGroupItem
-                  value={opt.name}
-                  id={`regen-${opt.name}`}
-                  className="mt-0.5"
-                />
-                <div className="space-y-0.5">
-                  <div className="font-medium leading-tight">{opt.name}</div>
-                  <div className="text-sm text-muted-foreground leading-snug font-normal">
-                    {opt.oneliner}
-                  </div>
-                </div>
-              </Label>
-            ))}
-          </RadioGroup>
+                {(format === "carousel" || format === "voiceover_broll"
+                  ? REGISTERS_BY_FORMAT[format]
+                  : []
+                ).map((opt) => (
+                  <Label
+                    key={opt.name}
+                    htmlFor={`regen-${opt.name}`}
+                    className={`flex items-start gap-3 rounded-md border p-3 cursor-pointer transition ${
+                      register === opt.name
+                        ? "border-foreground bg-muted/40"
+                        : "hover:bg-muted/20"
+                    }`}
+                  >
+                    <RadioGroupItem
+                      value={opt.name}
+                      id={`regen-${opt.name}`}
+                      className="mt-0.5"
+                    />
+                    <div className="space-y-0.5">
+                      <div className="font-medium leading-tight">
+                        {opt.name}
+                      </div>
+                      <div className="text-sm text-muted-foreground leading-snug font-normal">
+                        {opt.oneliner}
+                      </div>
+                    </div>
+                  </Label>
+                ))}
+              </RadioGroup>
+            </>
+          )}
           <div className="flex gap-2">
             <Button onClick={regenerate} disabled={pending}>
               {pending ? "Generating..." : "Regenerate"}

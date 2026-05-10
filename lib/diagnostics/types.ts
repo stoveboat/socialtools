@@ -69,14 +69,26 @@ export interface CarouselBrief {
   design_notes: string;
 }
 
+// The caption reel in this product is a 7-second looping vertical video
+// where the entire visual surface is a wall of text (15-25 words target,
+// up to 35-40 max). The text takes 10-15 seconds to read; the loop forces
+// rereading. Success criteria: shareability, commentability, rereadability.
+//
+// If the source talking head doesn't contain a claimable observation
+// strong enough to anchor a wall, claimable_observation_found is false
+// and the wall fields will be empty/explanatory — the UI surfaces this
+// honestly rather than forcing flat output.
 export interface CaptionReelBrief {
-  text_cards: {
-    card_number: number;
-    text: string;
-    duration_seconds: number;
-    broll_suggestion: string;
-  }[];
-  music_recommendation: string;
+  claimable_observation_found: boolean;
+  claimable_observation_explanation: string;
+  wall_text: string;
+  word_count: number;
+  estimated_read_time_seconds: number;
+  screenshot_line: string;
+  first_line_function: string;
+  rereading_layers: string;
+  share_trigger: string;
+  comment_trigger: string;
   production_notes: string;
 }
 
@@ -106,7 +118,13 @@ export interface RegisterOption {
   example: string;
 }
 
-export const REGISTERS_BY_FORMAT: Record<DerivationFormat, RegisterOption[]> = {
+// Caption reel intentionally has no register options — the format is the
+// wall mechanic itself, and the directional choice is non-negotiables (a
+// free-text input handled by CaptionReelPanel), not a register radio.
+export const REGISTERS_BY_FORMAT: Record<
+  Exclude<DerivationFormat, "caption_reel">,
+  RegisterOption[]
+> = {
   carousel: [
     {
       name: "Textbook",
@@ -122,23 +140,6 @@ export const REGISTERS_BY_FORMAT: Record<DerivationFormat, RegisterOption[]> = {
       name: "Mirror in Textbook",
       oneliner: "A relatable list. You're naming the experience the reader already lives.",
       example: "\"6 things you'll recognise if you've ever shipped on a hard deadline.\"",
-    },
-  ],
-  caption_reel: [
-    {
-      name: "Mirror",
-      oneliner: "Relatable POV scenario the viewer instantly recognises.",
-      example: "\"When you finally fix the bug after three hours and it was a typo.\"",
-    },
-    {
-      name: "Mirror with sharpened tension",
-      oneliner: "Contrarian observation that calls out a common belief as wrong.",
-      example: "\"Everyone says do X. They're wrong. Here's why.\"",
-    },
-    {
-      name: "Friend",
-      oneliner: "Vulnerable text-driven confessional. Quieter, more intimate.",
-      example: "\"I never said this out loud, but I think I've been doing it for the wrong reason.\"",
     },
   ],
   voiceover_broll: [

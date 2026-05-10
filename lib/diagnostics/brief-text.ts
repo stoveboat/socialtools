@@ -29,24 +29,45 @@ function carouselToText(b: CarouselBrief, register: string): string {
   return lines.join("\n");
 }
 
-function captionReelToText(b: CaptionReelBrief, register: string): string {
+function captionReelToText(b: CaptionReelBrief): string {
   const lines: string[] = [];
-  lines.push(`# Caption Reel — ${register}`);
+  lines.push(`# Caption Reel`);
   lines.push("");
-  if (b.music_recommendation) {
-    lines.push(`Music: ${b.music_recommendation}`);
-    lines.push("");
+
+  if (!b.claimable_observation_found) {
+    lines.push("(no wall — script lacks a claimable observation)");
+    if (b.claimable_observation_explanation) {
+      lines.push("");
+      lines.push(b.claimable_observation_explanation);
+    }
+    return lines.join("\n");
   }
-  for (const c of b.text_cards) {
-    lines.push(
-      `## Card ${c.card_number} (${c.duration_seconds}s)`,
-    );
-    lines.push(`Text: ${c.text}`);
-    lines.push(`B-roll: ${c.broll_suggestion}`);
-    lines.push("");
+
+  lines.push(`## Wall (${b.word_count} words, ~${b.estimated_read_time_seconds.toFixed(1)}s to read)`);
+  lines.push("");
+  lines.push(b.wall_text);
+  lines.push("");
+  lines.push("---");
+  if (b.claimable_observation_explanation) {
+    lines.push(`Claimable observation: ${b.claimable_observation_explanation}`);
+  }
+  if (b.first_line_function) {
+    lines.push(`First line function: ${b.first_line_function}`);
+  }
+  if (b.rereading_layers) {
+    lines.push(`Rereading layer: ${b.rereading_layers}`);
+  }
+  if (b.share_trigger) {
+    lines.push(`Share trigger: ${b.share_trigger}`);
+  }
+  if (b.comment_trigger) {
+    lines.push(`Comment trigger: ${b.comment_trigger}`);
+  }
+  if (b.screenshot_line) {
+    lines.push(`Screenshot line: "${b.screenshot_line}"`);
   }
   if (b.production_notes) {
-    lines.push(`---`);
+    lines.push("");
     lines.push(`Production notes: ${b.production_notes}`);
   }
   return lines.join("\n");
@@ -82,7 +103,7 @@ export function briefToText(
 ): string {
   if (format === "carousel") return carouselToText(content as CarouselBrief, register);
   if (format === "caption_reel")
-    return captionReelToText(content as CaptionReelBrief, register);
+    return captionReelToText(content as CaptionReelBrief);
   return voiceoverToText(content as VoiceoverBrief, register);
 }
 

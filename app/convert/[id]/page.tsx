@@ -2,11 +2,17 @@ import { notFound, redirect } from "next/navigation";
 import { SiteHeader } from "@/components/header";
 import { createClient } from "@/lib/supabase/server";
 import type { DerivationFormat } from "@/lib/diagnostics/types";
+import { CaptionReelPanel } from "./caption-reel-panel";
 import { FormatPanel } from "./format-panel";
 
-const FORMAT_QUESTIONS: Record<DerivationFormat, string> = {
+// Caption reel doesn't get a "what does it do that the talking head can't"
+// header here — its panel is fundamentally different (no register radio,
+// just non-negotiables) and the description lives in the panel itself.
+const FORMAT_QUESTIONS: Record<
+  Exclude<DerivationFormat, "caption_reel">,
+  string
+> = {
   carousel: "What does the carousel do that the talking head can't?",
-  caption_reel: "What does the caption reel do that the talking head can't?",
   voiceover_broll: "Who is the voiceover speaking as?",
 };
 
@@ -65,11 +71,9 @@ export default async function ConvertPage({
             question={FORMAT_QUESTIONS.carousel}
             existing={existingByFormat.carousel}
           />
-          <FormatPanel
+          <CaptionReelPanel
             pieceId={id}
-            format="caption_reel"
-            question={FORMAT_QUESTIONS.caption_reel}
-            existing={existingByFormat.caption_reel}
+            existing={{ hasOne: !!existingByFormat.caption_reel }}
           />
           <FormatPanel
             pieceId={id}

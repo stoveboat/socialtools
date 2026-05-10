@@ -11,9 +11,11 @@ import {
   type DerivationFormat,
 } from "@/lib/diagnostics/types";
 
+// FormatPanel handles register-driven formats (carousel, voiceover_broll).
+// Caption reel uses CaptionReelPanel — different directional UI.
 interface FormatPanelProps {
   pieceId: string;
-  format: DerivationFormat;
+  format: Exclude<DerivationFormat, "caption_reel">;
   question: string;
   existing?: { register: string };
 }

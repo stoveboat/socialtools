@@ -77,25 +77,61 @@ function validateCaptionReel(parsed: unknown): CaptionReelBrief {
     throw new BriefValidationError("Not an object", JSON.stringify(parsed));
   }
   const o = parsed as Record<string, unknown>;
-  if (!Array.isArray(o.text_cards) || o.text_cards.length === 0) {
-    throw new BriefValidationError("text_cards must be a non-empty array", "");
+
+  const claimable = o.claimable_observation_found === true;
+  const explanation =
+    typeof o.claimable_observation_explanation === "string"
+      ? o.claimable_observation_explanation
+      : "";
+
+  // When the model says the script can't anchor a wall, allow empty wall
+  // content. The UI surfaces the explanation rather than forcing flat output.
+  if (!claimable) {
+    return {
+      claimable_observation_found: false,
+      claimable_observation_explanation: explanation,
+      wall_text: "",
+      word_count: 0,
+      estimated_read_time_seconds: 0,
+      screenshot_line: "",
+      first_line_function: "",
+      rereading_layers: "",
+      share_trigger: "",
+      comment_trigger: "",
+      production_notes:
+        typeof o.production_notes === "string" ? o.production_notes : "",
+    };
   }
-  for (const c of o.text_cards as Record<string, unknown>[]) {
-    if (
-      typeof c.card_number !== "number" ||
-      typeof c.text !== "string" ||
-      typeof c.duration_seconds !== "number" ||
-      typeof c.broll_suggestion !== "string"
-    ) {
-      throw new BriefValidationError("text_card entry malformed", "");
-    }
+
+  if (typeof o.wall_text !== "string" || o.wall_text.trim() === "") {
+    throw new BriefValidationError(
+      "wall_text required when claimable_observation_found=true",
+      "",
+    );
   }
+  const wordCount =
+    typeof o.word_count === "number"
+      ? o.word_count
+      : o.wall_text.trim().split(/\s+/).length;
   return {
-    text_cards: o.text_cards as CaptionReelBrief["text_cards"],
-    music_recommendation:
-      typeof o.music_recommendation === "string"
-        ? o.music_recommendation
-        : "",
+    claimable_observation_found: true,
+    claimable_observation_explanation: explanation,
+    wall_text: o.wall_text,
+    word_count: wordCount,
+    estimated_read_time_seconds:
+      typeof o.estimated_read_time_seconds === "number"
+        ? o.estimated_read_time_seconds
+        : Math.round(wordCount / 3),
+    screenshot_line:
+      typeof o.screenshot_line === "string" ? o.screenshot_line : "",
+    first_line_function:
+      typeof o.first_line_function === "string" ? o.first_line_function : "",
+    rereading_layers:
+      typeof o.rereading_layers === "string" ? o.rereading_layers : "",
+    share_trigger:
+      typeof o.share_trigger === "string" ? o.share_trigger : "",
+    comment_trigger:
+      typeof o.comment_trigger === "string" ? o.comment_trigger : "",
     production_notes:
       typeof o.production_notes === "string" ? o.production_notes : "",
   };
@@ -170,13 +206,18 @@ async function callOnce(
 
 export async function generateBrief(
   format: DerivationFormat,
-  register: string,
+  // For carousel and voiceover_broll this is the register name. For
+  // caption_reel it is the user's non-negotiables string (or "" if none) —
+  // caption reel has no register concept.
+  registerOrNonNegotiables: string,
   script: string,
   context: ChannelContext,
 ): Promise<BriefContent> {
   const { system, user } = PROMPTS[format];
   const userPrompt = fillTemplate(user, {
-    register,
+    register: format === "caption_reel" ? "" : registerOrNonNegotiables,
+    non_negotiables:
+      format === "caption_reel" ? registerOrNonNegotiables : "",
     script,
     audience: context.audience,
     channel: context.channel,
