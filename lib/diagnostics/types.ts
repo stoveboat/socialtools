@@ -102,16 +102,23 @@ export interface CarouselBrief {
   loss_aversion_opportunity: string;
 }
 
-// The caption reel in this product is a 7-second looping vertical video
-// where the entire visual surface is a wall of text (15-25 words target,
-// up to 35-40 max). The text takes 10-15 seconds to read; the loop forces
-// rereading. Success criteria: shareability, commentability, rereadability.
+// Caption reel has two mechanically distinct variants. The user picks based
+// on what they're trying to accomplish.
 //
-// If the source talking head doesn't contain a claimable observation
-// strong enough to anchor a wall, claimable_observation_found is false
-// and the wall fields will be empty/explanatory — the UI surfaces this
-// honestly rather than forcing flat output.
-export interface CaptionReelBrief {
+//   wall              - 7-second looping wall of text (15-25 words). Loop
+//                       forces rereading. Optimises for shareability,
+//                       commentability, rereadability. Best when the source
+//                       has a single claimable observation that can be
+//                       compressed extreme.
+//   sequential_cards  - 15-30 second card-based reel (3-8 text cards with
+//                       per-card durations and b-roll). Closer to the
+//                       talking head's structure. Optimises for retention
+//                       and visual-rhythm comprehension. Best when the
+//                       source has multiple beats worth carrying through.
+
+// Wall variant — the high-compression loop format.
+export interface CaptionReelWallBrief {
+  variant: "wall";
   claimable_observation_found: boolean;
   claimable_observation_explanation: string;
   wall_text: string;
@@ -124,6 +131,24 @@ export interface CaptionReelBrief {
   comment_trigger: string;
   production_notes: string;
 }
+
+// Sequential cards variant — closer to the original talking-head structure,
+// expressed as 3-8 silent-friendly text cards with b-roll suggestions.
+export interface CaptionReelSequentialBrief {
+  variant: "sequential_cards";
+  text_cards: {
+    card_number: number;
+    text: string;
+    duration_seconds: number;
+    broll_suggestion: string;
+  }[];
+  music_recommendation: string;
+  production_notes: string;
+}
+
+export type CaptionReelBrief =
+  | CaptionReelWallBrief
+  | CaptionReelSequentialBrief;
 
 // Voiceover-with-b-roll has two mechanically distinct variants. They produce
 // different artifacts (a cutting plan vs. a rewritten script) and optimise
@@ -196,13 +221,10 @@ export interface RegisterOption {
   example: string;
 }
 
-// Caption reel intentionally has no register options — the format is the
-// wall mechanic itself, and the directional choice is non-negotiables (a
-// free-text input handled by CaptionReelPanel), not a register radio.
-export const REGISTERS_BY_FORMAT: Record<
-  Exclude<DerivationFormat, "caption_reel">,
-  RegisterOption[]
-> = {
+// Caption reel registers are now the two variants. The user picks based on
+// what they're trying to make. Voiceover registers map to its two variants
+// the same way.
+export const REGISTERS_BY_FORMAT: Record<DerivationFormat, RegisterOption[]> = {
   carousel: [
     {
       name: "Explainer",
@@ -224,6 +246,22 @@ export const REGISTERS_BY_FORMAT: Record<
         "Position claims. Each slide stakes ground; the carousel is what the reader stands for.",
       example:
         "\"Things I refuse to feel guilty about as a [X].\" Sharp, declarative. Save-trigger is tribe-flag — the reader saves to claim the position.",
+    },
+  ],
+  caption_reel: [
+    {
+      name: "Wall of text loop",
+      oneliner:
+        "7-second looping wall (15-25 words). Loop forces rereading. Optimises for shareability and comments.",
+      example:
+        "Single dense block. Specific enough that the reader instantly thinks of one person to send it to. Best when the talking head has one claimable observation that compresses hard.",
+    },
+    {
+      name: "Sequential cards",
+      oneliner:
+        "15-30 second card reel (3-8 text cards with b-roll). Closer to the talking head's structure.",
+      example:
+        "Each card a complete thought that lands silently. Music bed underneath. Best when the talking head has multiple beats worth carrying through, or when the audience needs visual rhythm to retain the message.",
     },
   ],
   voiceover_broll: [

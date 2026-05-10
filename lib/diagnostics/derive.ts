@@ -1,7 +1,9 @@
 import { getLLMClient, GRADING_MODEL } from "../llm";
 import {
-  CAPTION_REEL_SYSTEM_PROMPT,
-  CAPTION_REEL_USER_PROMPT,
+  CAPTION_REEL_SEQUENTIAL_SYSTEM_PROMPT,
+  CAPTION_REEL_SEQUENTIAL_USER_PROMPT,
+  CAPTION_REEL_WALL_SYSTEM_PROMPT,
+  CAPTION_REEL_WALL_USER_PROMPT,
   CAROUSEL_SYSTEM_PROMPT,
   CAROUSEL_USER_PROMPT,
   FRIEND_VO_SYSTEM_PROMPT,
@@ -13,6 +15,8 @@ import {
 import type {
   BriefContent,
   CaptionReelBrief,
+  CaptionReelSequentialBrief,
+  CaptionReelWallBrief,
   CarouselBrief,
   ChannelContext,
   DerivationFormat,
@@ -21,10 +25,20 @@ import type {
   VoiceoverBrief,
 } from "./types";
 
-// The voiceover_broll format branches based on the user's register choice
-// (the two registers map 1:1 to the two variants). Each variant has its own
-// prompt and validator. Carousel and caption_reel are single-prompt.
+// Each register-bearing format branches its prompt + validator on the user's
+// register choice. Carousel uses a single prompt with the subgenre as input.
+
+type CaptionReelVariant = "wall" | "sequential_cards";
 type VoiceoverVariant = "interview_cut" | "friend_vo";
+type Variant = CaptionReelVariant | VoiceoverVariant;
+
+function pickCaptionReelVariant(register: string): CaptionReelVariant {
+  // "Sequential cards" → sequential_cards. Default to wall for the empty
+  // string, "Wall of text loop", or any unrecognised value.
+  return register.toLowerCase().includes("sequential")
+    ? "sequential_cards"
+    : "wall";
+}
 
 function pickVoiceoverVariant(register: string): VoiceoverVariant {
   return register.toLowerCase().includes("interview")
@@ -135,7 +149,7 @@ function validateCarousel(parsed: unknown): CarouselBrief {
   };
 }
 
-function validateCaptionReel(parsed: unknown): CaptionReelBrief {
+function validateCaptionReelWall(parsed: unknown): CaptionReelWallBrief {
   if (!parsed || typeof parsed !== "object") {
     throw new BriefValidationError("Not an object", JSON.stringify(parsed));
   }
@@ -151,6 +165,7 @@ function validateCaptionReel(parsed: unknown): CaptionReelBrief {
   // content. The UI surfaces the explanation rather than forcing flat output.
   if (!claimable) {
     return {
+      variant: "wall",
       claimable_observation_found: false,
       claimable_observation_explanation: explanation,
       wall_text: "",
@@ -177,6 +192,7 @@ function validateCaptionReel(parsed: unknown): CaptionReelBrief {
       ? o.word_count
       : o.wall_text.trim().split(/\s+/).length;
   return {
+    variant: "wall",
     claimable_observation_found: true,
     claimable_observation_explanation: explanation,
     wall_text: o.wall_text,
@@ -195,6 +211,38 @@ function validateCaptionReel(parsed: unknown): CaptionReelBrief {
       typeof o.share_trigger === "string" ? o.share_trigger : "",
     comment_trigger:
       typeof o.comment_trigger === "string" ? o.comment_trigger : "",
+    production_notes:
+      typeof o.production_notes === "string" ? o.production_notes : "",
+  };
+}
+
+function validateCaptionReelSequential(
+  parsed: unknown,
+): CaptionReelSequentialBrief {
+  if (!parsed || typeof parsed !== "object") {
+    throw new BriefValidationError("Not an object", JSON.stringify(parsed));
+  }
+  const o = parsed as Record<string, unknown>;
+  if (!Array.isArray(o.text_cards) || o.text_cards.length === 0) {
+    throw new BriefValidationError("text_cards must be a non-empty array", "");
+  }
+  for (const c of o.text_cards as Record<string, unknown>[]) {
+    if (
+      typeof c.card_number !== "number" ||
+      typeof c.text !== "string" ||
+      typeof c.duration_seconds !== "number" ||
+      typeof c.broll_suggestion !== "string"
+    ) {
+      throw new BriefValidationError("text_card entry malformed", "");
+    }
+  }
+  return {
+    variant: "sequential_cards",
+    text_cards: o.text_cards as CaptionReelSequentialBrief["text_cards"],
+    music_recommendation:
+      typeof o.music_recommendation === "string"
+        ? o.music_recommendation
+        : "",
     production_notes:
       typeof o.production_notes === "string" ? o.production_notes : "",
   };
@@ -325,7 +373,7 @@ function validateFriendVO(parsed: unknown): FriendVOBrief {
 
 function validateBrief(
   format: DerivationFormat,
-  variant: VoiceoverVariant | null,
+  variant: Variant | null,
   raw: string,
 ): BriefContent {
   let parsed: unknown;
@@ -335,7 +383,11 @@ function validateBrief(
     throw new BriefValidationError("Not valid JSON", raw);
   }
   if (format === "carousel") return validateCarousel(parsed);
-  if (format === "caption_reel") return validateCaptionReel(parsed);
+  if (format === "caption_reel") {
+    return variant === "sequential_cards"
+      ? validateCaptionReelSequential(parsed)
+      : validateCaptionReelWall(parsed);
+  }
   if (variant === "interview_cut") return validateInterviewCut(parsed);
   return validateFriendVO(parsed);
 }
@@ -384,6 +436,22 @@ function pickVoiceoverPrompts(variant: VoiceoverVariant): {
   return { system: FRIEND_VO_SYSTEM_PROMPT, user: FRIEND_VO_USER_PROMPT };
 }
 
+function pickCaptionReelPrompts(variant: CaptionReelVariant): {
+  system: string;
+  user: string;
+} {
+  if (variant === "sequential_cards") {
+    return {
+      system: CAPTION_REEL_SEQUENTIAL_SYSTEM_PROMPT,
+      user: CAPTION_REEL_SEQUENTIAL_USER_PROMPT,
+    };
+  }
+  return {
+    system: CAPTION_REEL_WALL_SYSTEM_PROMPT,
+    user: CAPTION_REEL_WALL_USER_PROMPT,
+  };
+}
+
 export async function generateBrief(
   format: DerivationFormat,
   opts: GenerateBriefOptions,
@@ -392,14 +460,16 @@ export async function generateBrief(
 ): Promise<BriefContent> {
   let system: string;
   let user: string;
-  let variant: VoiceoverVariant | null = null;
+  let variant: Variant | null = null;
 
   if (format === "carousel") {
     system = CAROUSEL_SYSTEM_PROMPT;
     user = CAROUSEL_USER_PROMPT;
   } else if (format === "caption_reel") {
-    system = CAPTION_REEL_SYSTEM_PROMPT;
-    user = CAPTION_REEL_USER_PROMPT;
+    variant = pickCaptionReelVariant(opts.register ?? "");
+    const prompts = pickCaptionReelPrompts(variant);
+    system = prompts.system;
+    user = prompts.user;
   } else {
     variant = pickVoiceoverVariant(opts.register ?? "");
     const prompts = pickVoiceoverPrompts(variant);

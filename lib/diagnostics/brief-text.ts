@@ -58,8 +58,33 @@ function carouselToText(b: CarouselBrief, register: string): string {
 }
 
 function captionReelToText(b: CaptionReelBrief): string {
+  // Variant detection mirrors the brief view's auto-migration logic so
+  // legacy briefs (no `variant` field) still export correctly.
+  const raw = b as unknown as Record<string, unknown>;
+  const variant =
+    typeof raw.variant === "string"
+      ? raw.variant
+      : Array.isArray(raw.text_cards)
+        ? "sequential_cards"
+        : typeof raw.wall_text === "string"
+          ? "wall"
+          : null;
+  if (variant === "sequential_cards") {
+    return captionReelSequentialToText(
+      b as import("./types").CaptionReelSequentialBrief,
+    );
+  }
+  if (variant === "wall") {
+    return captionReelWallToText(b as import("./types").CaptionReelWallBrief);
+  }
+  return `# Caption Reel\n\n(Brief is in an unrecognised shape. Regenerate it.)`;
+}
+
+function captionReelWallToText(
+  b: import("./types").CaptionReelWallBrief,
+): string {
   const lines: string[] = [];
-  lines.push(`# Caption Reel`);
+  lines.push(`# Caption Reel — Wall of text loop`);
   lines.push("");
 
   if (!b.claimable_observation_found) {
@@ -71,7 +96,9 @@ function captionReelToText(b: CaptionReelBrief): string {
     return lines.join("\n");
   }
 
-  lines.push(`## Wall (${b.word_count} words, ~${b.estimated_read_time_seconds.toFixed(1)}s to read)`);
+  lines.push(
+    `## Wall (${b.word_count} words, ~${b.estimated_read_time_seconds.toFixed(1)}s to read)`,
+  );
   lines.push("");
   lines.push(b.wall_text);
   lines.push("");
@@ -96,6 +123,34 @@ function captionReelToText(b: CaptionReelBrief): string {
   }
   if (b.production_notes) {
     lines.push("");
+    lines.push(`Production notes: ${b.production_notes}`);
+  }
+  return lines.join("\n");
+}
+
+function captionReelSequentialToText(
+  b: import("./types").CaptionReelSequentialBrief,
+): string {
+  const lines: string[] = [];
+  const total = b.text_cards.reduce((s, c) => s + (c.duration_seconds || 0), 0);
+  lines.push(
+    `# Caption Reel — Sequential cards (${b.text_cards.length} cards, ~${total.toFixed(1)}s)`,
+  );
+  lines.push("");
+  if (b.music_recommendation) {
+    lines.push(`Music: ${b.music_recommendation}`);
+    lines.push("");
+  }
+  for (const c of b.text_cards) {
+    lines.push(`## Card ${c.card_number} (${c.duration_seconds.toFixed(1)}s)`);
+    lines.push(`Text: ${c.text}`);
+    if (c.broll_suggestion) {
+      lines.push(`B-roll: ${c.broll_suggestion}`);
+    }
+    lines.push("");
+  }
+  if (b.production_notes) {
+    lines.push(`---`);
     lines.push(`Production notes: ${b.production_notes}`);
   }
   return lines.join("\n");

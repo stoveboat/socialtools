@@ -12,6 +12,8 @@ import {
   REGISTERS_BY_FORMAT,
   type BriefContent,
   type CaptionReelBrief,
+  type CaptionReelSequentialBrief,
+  type CaptionReelWallBrief,
   type CarouselBrief,
   type DerivationFormat,
   type FriendVOBrief,
@@ -297,30 +299,55 @@ function CaptionReelView({
   brief: CaptionReelBrief;
   pieceId: string;
 }) {
-  // Detect legacy shape: old briefs were stored as { text_cards, ... }
-  // before the wall-of-text redefinition. Accept the JSONB but show a
-  // regenerate prompt rather than rendering broken UI.
-  const legacy =
-    "text_cards" in (brief as unknown as Record<string, unknown>);
-  if (legacy) {
+  // Variant detection. Legacy briefs from before the discriminated union
+  // (which had text_cards but no `variant`) auto-route to the sequential
+  // view; legacy wall briefs (no variant but had wall_text) auto-route to
+  // wall. Anything else surfaces a regenerate banner.
+  const raw = brief as unknown as Record<string, unknown>;
+  const variant =
+    typeof raw.variant === "string"
+      ? raw.variant
+      : Array.isArray(raw.text_cards)
+        ? "sequential_cards"
+        : typeof raw.wall_text === "string"
+          ? "wall"
+          : null;
+
+  if (variant === "wall") {
     return (
-      <div className="rounded-lg border bg-amber-50 border-amber-300 p-5 space-y-3">
-        <p className="text-sm">
-          This caption-reel brief was generated under an earlier definition
-          of the format (a sequence of timed text cards). The format has
-          since been redefined as a 7-second looping wall of text.
-        </p>
-        <p className="text-sm">
-          Regenerate the brief from the configure screen to get the new
-          wall format.
-        </p>
-        <Link href={`/convert/${pieceId}`}>
-          <Button size="sm">Back to format selection</Button>
-        </Link>
-      </div>
+      <CaptionReelWallView
+        brief={brief as CaptionReelWallBrief}
+        pieceId={pieceId}
+      />
     );
   }
+  if (variant === "sequential_cards") {
+    return (
+      <CaptionReelSequentialView
+        brief={brief as CaptionReelSequentialBrief}
+      />
+    );
+  }
+  return (
+    <div className="rounded-lg border bg-amber-50 border-amber-300 p-5 space-y-3">
+      <p className="text-sm">
+        This caption-reel brief is in an unrecognised shape. Regenerate it
+        from the configure screen.
+      </p>
+      <Link href={`/convert/${pieceId}`}>
+        <Button size="sm">Back to format selection</Button>
+      </Link>
+    </div>
+  );
+}
 
+function CaptionReelWallView({
+  brief,
+  pieceId,
+}: {
+  brief: CaptionReelWallBrief;
+  pieceId: string;
+}) {
   if (!brief.claimable_observation_found) {
     return (
       <div className="rounded-lg border bg-amber-50 border-amber-300 p-5 space-y-3">
@@ -334,8 +361,9 @@ function CaptionReelView({
           </p>
         ) : null}
         <p className="text-sm text-amber-900/90">
-          Try the carousel or voiceover format, or refine the talking head
-          to surface one specific claim before regenerating.
+          Try the sequential cards variant, the carousel, or the voiceover —
+          or refine the talking head to surface one specific claim before
+          regenerating.
         </p>
         <Link href={`/convert/${pieceId}`}>
           <Button size="sm" variant="outline">
@@ -349,6 +377,9 @@ function CaptionReelView({
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+        <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 font-medium">
+          Wall of text loop
+        </span>
         <span>{brief.word_count} words</span>
         <span>·</span>
         <span>~{brief.estimated_read_time_seconds.toFixed(1)}s to read</span>
@@ -417,6 +448,60 @@ function CaptionReelView({
           ) : null}
         </dl>
       </div>
+
+      {brief.production_notes ? (
+        <p className="text-sm text-muted-foreground border-t pt-4">
+          <span className="font-medium">Production notes: </span>
+          {brief.production_notes}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function CaptionReelSequentialView({
+  brief,
+}: {
+  brief: CaptionReelSequentialBrief;
+}) {
+  const totalDuration = brief.text_cards.reduce(
+    (sum, c) => sum + (c.duration_seconds || 0),
+    0,
+  );
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+        <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 font-medium">
+          Sequential cards
+        </span>
+        <span>{brief.text_cards.length} cards</span>
+        <span>·</span>
+        <span>~{totalDuration.toFixed(1)}s total</span>
+      </div>
+
+      {brief.music_recommendation ? (
+        <p className="text-sm rounded-md bg-muted/40 px-3 py-2">
+          <span className="font-medium">Music: </span>
+          {brief.music_recommendation}
+        </p>
+      ) : null}
+
+      <ul className="space-y-3">
+        {brief.text_cards.map((c) => (
+          <li key={c.card_number} className="rounded-lg border p-4 space-y-2">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              Card {c.card_number} — {c.duration_seconds.toFixed(1)}s
+            </p>
+            <p className="text-lg font-medium leading-snug">{c.text}</p>
+            {c.broll_suggestion ? (
+              <p className="text-sm text-muted-foreground">
+                <span className="font-medium">B-roll: </span>
+                {c.broll_suggestion}
+              </p>
+            ) : null}
+          </li>
+        ))}
+      </ul>
 
       {brief.production_notes ? (
         <p className="text-sm text-muted-foreground border-t pt-4">

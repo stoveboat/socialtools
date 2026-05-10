@@ -59,15 +59,18 @@ export function BriefActions({
     URL.revokeObjectURL(url);
   };
 
+  const acceptsNonNegotiables =
+    format === "caption_reel" || format === "voiceover_broll";
+
   const regenerate = async () => {
     setPending(true);
     setError(null);
     try {
-      const body: Record<string, unknown> = { format };
-      if (format === "caption_reel") {
+      // All three formats now drive variant/subgenre via register. Caption
+      // reel and voiceover additionally accept free-text non-negotiables.
+      const body: Record<string, unknown> = { format, register };
+      if (acceptsNonNegotiables && nonNegotiables.trim()) {
         body.non_negotiables = nonNegotiables.trim();
-      } else {
-        body.register = register;
       }
       const res = await fetch(`/api/derivation/${pieceId}`, {
         method: "POST",
@@ -106,10 +109,7 @@ export function BriefActions({
     }
   };
 
-  const regenLabel =
-    format === "caption_reel"
-      ? "Regenerate with new non-negotiables"
-      : "Regenerate with different angle";
+  const regenLabel = "Regenerate";
 
   return (
     <div className="space-y-4">
@@ -133,63 +133,61 @@ export function BriefActions({
       </div>
 
       {showRegen ? (
-        <div className="rounded-lg border p-4 space-y-3">
-          {format === "caption_reel" ? (
-            <>
+        <div className="rounded-lg border p-4 space-y-4">
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Pick a variant:</p>
+            <RadioGroup
+              value={register}
+              onValueChange={setRegister}
+              className="space-y-2"
+            >
+              {REGISTERS_BY_FORMAT[format].map((opt) => (
+                <Label
+                  key={opt.name}
+                  htmlFor={`regen-${opt.name}`}
+                  className={`flex items-start gap-3 rounded-md border p-3 cursor-pointer transition ${
+                    register === opt.name
+                      ? "border-foreground bg-muted/40"
+                      : "hover:bg-muted/20"
+                  }`}
+                >
+                  <RadioGroupItem
+                    value={opt.name}
+                    id={`regen-${opt.name}`}
+                    className="mt-0.5"
+                  />
+                  <div className="space-y-0.5">
+                    <div className="font-medium leading-tight">{opt.name}</div>
+                    <div className="text-sm text-muted-foreground leading-snug font-normal">
+                      {opt.oneliner}
+                    </div>
+                  </div>
+                </Label>
+              ))}
+            </RadioGroup>
+          </div>
+
+          {acceptsNonNegotiables ? (
+            <div className="space-y-2 border-t pt-3">
               <p className="text-sm font-medium">
-                Add non-negotiables for the next attempt
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Phrases the wall must include, lines it must end on, or
-                directives. Leave blank to let the model try a different
-                approach freely.
+                Non-negotiables{" "}
+                <span className="font-normal text-muted-foreground">
+                  (optional)
+                </span>
               </p>
               <Textarea
                 rows={3}
                 value={nonNegotiables}
                 onChange={(e) => setNonNegotiables(e.target.value)}
-                placeholder={`e.g. "must end on: 'you don't need a planner. you need permission to keep yours simple.'"`}
+                placeholder={
+                  format === "caption_reel"
+                    ? `e.g. "must end on: 'you don't need a planner. you need permission.'"`
+                    : `e.g. "anchor on the 2 AM moment" or "must keep the espresso-machine line"`
+                }
               />
-            </>
-          ) : (
-            <>
-              <p className="text-sm font-medium">Pick a different angle:</p>
-              <RadioGroup
-                value={register}
-                onValueChange={setRegister}
-                className="space-y-2"
-              >
-                {(format === "carousel" || format === "voiceover_broll"
-                  ? REGISTERS_BY_FORMAT[format]
-                  : []
-                ).map((opt) => (
-                  <Label
-                    key={opt.name}
-                    htmlFor={`regen-${opt.name}`}
-                    className={`flex items-start gap-3 rounded-md border p-3 cursor-pointer transition ${
-                      register === opt.name
-                        ? "border-foreground bg-muted/40"
-                        : "hover:bg-muted/20"
-                    }`}
-                  >
-                    <RadioGroupItem
-                      value={opt.name}
-                      id={`regen-${opt.name}`}
-                      className="mt-0.5"
-                    />
-                    <div className="space-y-0.5">
-                      <div className="font-medium leading-tight">
-                        {opt.name}
-                      </div>
-                      <div className="text-sm text-muted-foreground leading-snug font-normal">
-                        {opt.oneliner}
-                      </div>
-                    </div>
-                  </Label>
-                ))}
-              </RadioGroup>
-            </>
-          )}
+            </div>
+          ) : null}
+
           <div className="flex gap-2">
             <Button onClick={regenerate} disabled={pending}>
               {pending ? "Generating..." : "Regenerate"}

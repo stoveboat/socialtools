@@ -803,15 +803,16 @@ Produce 5-8 interior slides typically (7-10 if the source supports an educationa
 
 Respond with only the JSON object.`;
 
-// Caption reel — wall-of-text loop format
+// Caption reel has two variants. The wall is the high-compression loop;
+// the sequential cards reel is closer to the talking head's structure.
+// Both are valid; the user picks based on what they're trying to make.
 //
+// Variant 1: WALL OF TEXT LOOP
 // A 7-second looping vertical video where the entire visual surface is a
-// wall of text (15-25 words target, up to 35-40). Reading takes 10-15
-// seconds; the loop forces rereading. The format succeeds on three axes
-// simultaneously: shareability, commentability, rereadability. It is NOT
-// a video with text overlay and it is NOT a card-by-card structure — the
-// wall is one continuous block.
-export const CAPTION_REEL_SYSTEM_PROMPT = `You are a producer creating a caption reel from a talking-head video script. A caption reel in this product is a specific format: a 7-second looping vertical video where the entire visual surface is a wall of text (15-25 words, sometimes up to 35-40). The text takes 10-15 seconds to read. The video loops continuously, forcing the viewer to either commit to reading it or scroll past.
+// wall of text (15-25 words target, up to 35-40 max). Reading takes 10-15
+// seconds; the loop forces rereading. Succeeds on shareability,
+// commentability, rereadability.
+export const CAPTION_REEL_WALL_SYSTEM_PROMPT = `You are a producer creating a caption reel from a talking-head video script. A caption reel in this product is a specific format: a 7-second looping vertical video where the entire visual surface is a wall of text (15-25 words, sometimes up to 35-40). The text takes 10-15 seconds to read. The video loops continuously, forcing the viewer to either commit to reading it or scroll past.
 
 The format succeeds on three axes simultaneously:
 
@@ -866,7 +867,7 @@ Output format (JSON):
   "production_notes": "string — visual register, font/style recommendations, music if any"
 }`;
 
-export const CAPTION_REEL_USER_PROMPT = `Convert this talking head into a caption reel wall.
+export const CAPTION_REEL_WALL_USER_PROMPT = `Convert this talking head into a caption reel wall.
 
 Source script:
 """
@@ -881,6 +882,60 @@ User's non-negotiables for the wall (optional, may be empty — phrases the wall
 {{non_negotiables}}
 
 Find the one claimable observation. Compress. Rebuild the wall with rereading layers. End on the screenshottable line. Respect any non-negotiables above.
+
+Respond with only the JSON object.`;
+
+// Variant 2: SEQUENTIAL CARDS REEL
+// 15-30 second silent-friendly video where 3-8 text cards carry the message
+// in order, each card lasting 2-5 seconds, with b-roll beneath each card.
+// Closer to the talking head's structure than the wall — multiple beats
+// carried through, music bed underneath, retention via visual rhythm.
+export const CAPTION_REEL_SEQUENTIAL_SYSTEM_PROMPT = `You are a producer creating a caption reel from a talking-head video script. This variant is a 15-30 second silent-friendly video where 3-8 text cards carry the message in sequence, each card on screen for 2-5 seconds, with b-roll suggestions per card and a music bed underneath.
+
+This variant is closer to the talking head's structure than the wall variant — multiple beats carried through, retention via visual rhythm and per-card pacing. Each card is a complete thought that lands silently (no voiceover); successive cards build the argument the way the talking head's sentences did.
+
+Format mechanics:
+
+- 3-8 text cards total. Tighter is usually better; 5-6 cards is a sensible default for a 20-second reel.
+- Each card holds a single thought, 4-12 words. Don't pack two ideas into one card; split into two cards instead.
+- duration_seconds per card: 2-5 seconds depending on word count. Shorter cards (4-6 words) read in ~2s; longer cards (10-12 words) need ~4-5s. Sum of durations should land between 15 and 30 seconds total.
+- Each card includes a b-roll suggestion: a specific shot/scene that supports the card's text without literalising it. B-roll for caption reels is typically light (the cards are doing the carrying), but should match the energy and pace.
+- Music recommendation: a short description of the music bed (genre, energy level, percussion presence). Music does heavy lifting in this format because the cards are silent.
+
+Voice carryover: cards should feel like the same speaker who recorded the talking head, just compressed into card-friendly fragments. Inherit vocabulary and analogies; lose the throat-clearing and the connective tissue.
+
+Use the script's spine and key beats as the source material. Do NOT invent new claims; the cards are the talking head's arguments compressed.
+
+Output format (JSON):
+{
+  "variant": "sequential_cards",
+  "text_cards": [
+    {
+      "card_number": 1,
+      "text": "string (4-12 words, complete thought)",
+      "duration_seconds": 3.0,
+      "broll_suggestion": "string"
+    }
+  ],
+  "music_recommendation": "string describing the music bed",
+  "production_notes": "1-2 sentences on pacing and visual treatment"
+}`;
+
+export const CAPTION_REEL_SEQUENTIAL_USER_PROMPT = `Convert this talking head into a sequential cards caption reel.
+
+Source script:
+"""
+{{script}}
+"""
+
+Channel context:
+- Audience: {{audience}}
+- Channel: {{channel}}
+
+User's non-negotiables for the reel (optional, may be empty — specific cards that must appear, beats that must be preserved in order, or phrases that should land on a specific card):
+{{non_negotiables}}
+
+Produce 3-8 cards that carry the talking head's spine and key beats silently. Sum of durations between 15 and 30 seconds. Each card a single complete thought. Respect any non-negotiables above.
 
 Respond with only the JSON object.`;
 

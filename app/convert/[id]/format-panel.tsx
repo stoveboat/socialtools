@@ -15,21 +15,45 @@ import {
 // Non-negotiables placeholder copy varies by format/variant — the user is
 // guided toward what makes sense to specify for that artifact.
 function nonNegotiablesPlaceholder(
-  format: "voiceover_broll",
+  format: "voiceover_broll" | "caption_reel",
   register: string,
 ): string {
   const lower = register.toLowerCase();
+  if (format === "caption_reel") {
+    if (lower.includes("sequential")) {
+      return `e.g. "card 1 must be the espresso-machine line" or "preserve the hydraulics close"`;
+    }
+    return `e.g. "must end on: 'you don't need a planner. you need permission.'"`;
+  }
   if (lower.includes("interview")) {
     return `e.g. "must keep the espresso-machine line in the cut" or "must end on the hydraulics line"`;
   }
   return `e.g. "anchor on the 2 AM moment" or "must end on: 'i didn't say it out loud until now'"`;
 }
 
-// FormatPanel handles register-driven formats (carousel, voiceover_broll).
-// Caption reel uses CaptionReelPanel — different directional UI.
+function nonNegotiablesGuidance(
+  format: "voiceover_broll" | "caption_reel",
+  register: string,
+): string {
+  const lower = register.toLowerCase();
+  if (format === "caption_reel") {
+    if (lower.includes("sequential")) {
+      return "Specific cards that must appear, beats that must be preserved in order, or phrases that should land on a particular card.";
+    }
+    return "Phrases the wall must include, lines it must end on, or directives like \"must end on the permission line\".";
+  }
+  if (lower.includes("interview")) {
+    return "Sentences from the talking head that must remain in the cutting plan, or beats that must be preserved in order.";
+  }
+  return "The vulnerability moment to anchor on, sensory anchors to keep, or a closing line the script must end on.";
+}
+
+// FormatPanel handles all three derivation formats. Each uses a register
+// radio to pick a subgenre/variant, and caption_reel + voiceover_broll
+// additionally accept a non-negotiables textarea.
 interface FormatPanelProps {
   pieceId: string;
-  format: Exclude<DerivationFormat, "caption_reel">;
+  format: DerivationFormat;
   question: string;
   existing?: { register: string };
 }
@@ -49,10 +73,10 @@ export function FormatPanel({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Voiceover takes optional non-negotiables (specifies which sentences
-  // to keep in a cut, or which vulnerability beat to anchor a Friend VO).
-  // Carousel doesn't surface non-negotiables here — register is enough.
-  const acceptsNonNegotiables = format === "voiceover_broll";
+  // Voiceover and caption_reel accept optional non-negotiables. Carousel
+  // doesn't surface non-negotiables here — register choice is enough.
+  const acceptsNonNegotiables =
+    format === "voiceover_broll" || format === "caption_reel";
 
   const generate = async () => {
     setPending(true);
@@ -132,7 +156,8 @@ export function FormatPanel({
         ))}
       </RadioGroup>
 
-      {acceptsNonNegotiables ? (
+      {acceptsNonNegotiables &&
+      (format === "voiceover_broll" || format === "caption_reel") ? (
         <div className="space-y-2">
           <p className="text-sm font-medium">
             Non-negotiables{" "}
@@ -141,15 +166,13 @@ export function FormatPanel({
             </span>
           </p>
           <p className="text-xs text-muted-foreground">
-            {register.toLowerCase().includes("interview")
-              ? "Sentences from the talking head that must remain in the cutting plan, or beats that must be preserved in order."
-              : "The vulnerability moment to anchor on, sensory anchors to keep, or a closing line the script must end on."}
+            {nonNegotiablesGuidance(format, register)}
           </p>
           <Textarea
             rows={3}
             value={nonNegotiables}
             onChange={(e) => setNonNegotiables(e.target.value)}
-            placeholder={nonNegotiablesPlaceholder("voiceover_broll", register)}
+            placeholder={nonNegotiablesPlaceholder(format, register)}
           />
         </div>
       ) : null}

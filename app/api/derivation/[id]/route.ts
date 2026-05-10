@@ -24,10 +24,10 @@ export async function POST(
   if (!VALID_FORMATS.has(format)) {
     return NextResponse.json({ error: "invalid_format" }, { status: 400 });
   }
-  // Caption reel has no register concept — it takes optional non-negotiables
-  // text and uses a constant register marker for the schema column. Other
-  // formats still require a register choice.
-  if (format !== "caption_reel" && !register) {
+  // All three formats now use the register slot to pick a variant or
+  // subgenre. Carousel: subgenre. Caption reel: wall vs sequential cards.
+  // Voiceover: interview cut vs friend VO.
+  if (!register) {
     return NextResponse.json({ error: "register_required" }, { status: 400 });
   }
 
@@ -89,9 +89,9 @@ export async function POST(
     .eq("format", format)
     .neq("status", "discarded");
 
-  // Caption reel has no register; store a constant marker so the schema's
-  // not-null register column is satisfied and the audit trail is honest.
-  const storedRegister = format === "caption_reel" ? "wall" : register;
+  // Stored register is the user's chosen register name (drives variant/subgenre
+  // for all three formats). Schema's not-null is satisfied directly.
+  const storedRegister = register;
 
   const { data: row, error: insertError } = await supabase
     .from("derivation_briefs")

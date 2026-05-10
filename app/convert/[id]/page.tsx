@@ -2,17 +2,11 @@ import { notFound, redirect } from "next/navigation";
 import { SiteHeader } from "@/components/header";
 import { createClient } from "@/lib/supabase/server";
 import type { DerivationFormat } from "@/lib/diagnostics/types";
-import { CaptionReelPanel } from "./caption-reel-panel";
 import { FormatPanel } from "./format-panel";
 
-// Caption reel doesn't get a "what does it do that the talking head can't"
-// header here — its panel is fundamentally different (no register radio,
-// just non-negotiables) and the description lives in the panel itself.
-const FORMAT_QUESTIONS: Record<
-  Exclude<DerivationFormat, "caption_reel">,
-  string
-> = {
+const FORMAT_QUESTIONS: Record<DerivationFormat, string> = {
   carousel: "What does the carousel do that the talking head can't?",
+  caption_reel: "What does the caption reel do that the talking head can't?",
   voiceover_broll: "Who is the voiceover speaking as?",
 };
 
@@ -58,9 +52,10 @@ export default async function ConvertPage({
           </h1>
           <p className="text-sm text-muted-foreground">
             Each format becomes a separate production brief. The angle you
-            pick changes what the brief sounds like — clinical, vulnerable,
-            or contrarian — without changing the underlying idea. Regenerate
-            any panel without affecting the others.
+            pick changes what the brief is — a tactical reference vs. a
+            confessional list, a wall-of-text loop vs. a sequential card
+            reel — without changing the underlying idea. Regenerate any
+            panel without affecting the others.
           </p>
         </header>
 
@@ -71,9 +66,11 @@ export default async function ConvertPage({
             question={FORMAT_QUESTIONS.carousel}
             existing={existingByFormat.carousel}
           />
-          <CaptionReelPanel
+          <FormatPanel
             pieceId={id}
-            existing={{ hasOne: !!existingByFormat.caption_reel }}
+            format="caption_reel"
+            question={FORMAT_QUESTIONS.caption_reel}
+            existing={existingByFormat.caption_reel}
           />
           <FormatPanel
             pieceId={id}
