@@ -19,12 +19,12 @@ export async function analyzeScript(formData: FormData) {
 
   if (words < MIN_WORDS) {
     redirect(
-      `/?error=${encodeURIComponent(`Scripts under ${MIN_WORDS} words are too short to analyze. Add more content.`)}`,
+      `/script?error=${encodeURIComponent(`Scripts under ${MIN_WORDS} words are too short to analyze. Add more content.`)}`,
     );
   }
   if (words > MAX_WORDS) {
     redirect(
-      `/?error=${encodeURIComponent(`The tool is built for short-form video scripts (≈8-10 minutes of speaking time, ${MAX_WORDS} words). Trim to a shorter excerpt or focus on one segment.`)}`,
+      `/script?error=${encodeURIComponent(`The tool is built for short-form video scripts (≈8-10 minutes of speaking time, ${MAX_WORDS} words). Trim to a shorter excerpt or focus on one segment.`)}`,
     );
   }
 
@@ -33,7 +33,7 @@ export async function analyzeScript(formData: FormData) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) {
-    redirect("/login?next=/");
+    redirect("/login?next=/script");
   }
 
   const { data: piece, error: pieceError } = await supabase
@@ -43,7 +43,7 @@ export async function analyzeScript(formData: FormData) {
     .single();
   if (pieceError || !piece) {
     redirect(
-      `/?error=${encodeURIComponent(`Failed to save script: ${pieceError?.message ?? "unknown error"}`)}`,
+      `/script?error=${encodeURIComponent(`Failed to save script: ${pieceError?.message ?? "unknown error"}`)}`,
     );
   }
 
@@ -52,7 +52,7 @@ export async function analyzeScript(formData: FormData) {
     phase0 = await runPhase0(script);
   } catch (err) {
     redirect(
-      `/?error=${encodeURIComponent(`Phase 0 inference failed: ${(err as Error).message}`)}`,
+      `/script?error=${encodeURIComponent(`Phase 0 inference failed: ${(err as Error).message}`)}`,
     );
   }
 
@@ -66,7 +66,7 @@ export async function analyzeScript(formData: FormData) {
   });
   if (ctxError) {
     redirect(
-      `/?error=${encodeURIComponent(`Failed to save Phase 0 context: ${ctxError.message}`)}`,
+      `/script?error=${encodeURIComponent(`Failed to save Phase 0 context: ${ctxError.message}`)}`,
     );
   }
 

@@ -11,7 +11,7 @@ export async function SiteHeader() {
   return (
     <header className="flex items-center justify-between px-6 py-4 border-b">
       <Link href="/" className="font-semibold">
-        Script Diagnostic Tool
+        Hooklab
       </Link>
       {user ? (
         <div className="flex items-center gap-4">

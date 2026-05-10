@@ -3,7 +3,7 @@
 import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { analyzeScript } from "./actions";
+import { analyzeScript } from "../actions";
 
 function SubmitButton() {
   const { pending } = useFormStatus();

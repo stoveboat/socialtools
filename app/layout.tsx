@@ -13,8 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Script Diagnostic Tool",
-  description: "Diagnose, repair, and derive short-form scripts.",
+  title: "Hooklab",
+  description:
+    "A workshop of focused tools for short-form social-media creation.",
 };
 
 export default function RootLayout({
