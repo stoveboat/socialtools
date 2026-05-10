@@ -119,15 +119,11 @@ export function RepairCard({
         const body = await res.json().catch(() => ({}));
         throw new Error(body.detail || body.error || `HTTP ${res.status}`);
       }
-      const data = (await res.json()) as {
-        done: boolean;
-        next_dimension_id: string | null;
-      };
-      if (data.done || !data.next_dimension_id) {
-        router.replace(`/repair/${diagnosticId}/review`);
-      } else {
-        router.replace(`/repair/${diagnosticId}/${data.next_dimension_id}`);
-      }
+      // We always return to the Summary so the user sees the refined script
+      // and the updated grades, picks the next move, or stops. The apply
+      // route's response shape is currently unused on the client.
+      await res.json().catch(() => ({}));
+      router.replace(`/diagnostic/${pieceId}/summary`);
     } catch (err) {
       setSubmitState({ kind: "error", message: (err as Error).message });
     }
@@ -295,9 +291,6 @@ export function RepairCard({
           Skip this dimension
         </Button>
       </div>
-      {/* pieceId is currently unused in the card UI but reserved for future
-          back-link affordances; reference it to keep the prop typed. */}
-      <span className="hidden">{pieceId}</span>
     </div>
   );
 }
