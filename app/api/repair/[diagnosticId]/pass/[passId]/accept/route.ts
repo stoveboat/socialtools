@@ -91,14 +91,24 @@ export async function POST(
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
-  // Save the revision as the new running draft.
+  // Save the revision as the new running draft. If this is the Foundation
+  // pass, the user picked a payoff type as part of their directional choices;
+  // persist it so subsequent re-grades can apply payoff-aware rubrics
+  // (Specificity in particular).
+  const lockedPayoff =
+    typeof body.locked_payoff_type === "string" &&
+    body.locked_payoff_type.trim()
+      ? body.locked_payoff_type.trim()
+      : undefined;
+  const updatePayload: Record<string, unknown> = {
+    refined_script: revisedScript,
+    current_phase: "phase_3",
+    updated_at: new Date().toISOString(),
+  };
+  if (lockedPayoff) updatePayload.locked_payoff_type = lockedPayoff;
   const { error: updateError } = await supabase
     .from("pieces")
-    .update({
-      refined_script: revisedScript,
-      current_phase: "phase_3",
-      updated_at: new Date().toISOString(),
-    })
+    .update(updatePayload)
     .eq("id", owner.piece_id);
   if (updateError) {
     return NextResponse.json(
@@ -106,6 +116,15 @@ export async function POST(
       { status: 500 },
     );
   }
+
+  // Pass-scope dimension overrides apply only to the active diagnostic.
+  // When a new diagnostic is generated below, those overrides should be
+  // dropped — piece-scope overrides survive.
+  await supabase
+    .from("dimension_overrides")
+    .delete()
+    .eq("piece_id", owner.piece_id)
+    .eq("scope", "pass");
 
   // Record the pass acceptance against the repair plan. repair_choices is
   // repurposed here: one row per accepted pass, with chosen_fix carrying the
@@ -143,12 +162,24 @@ export async function POST(
     traction: ctx?.custom_traction || ctx?.traction_selection || "Unknown",
     topic_summary: ctx?.topic_summary || "",
   };
+  // Read the (possibly just-updated) locked payoff type so the Specificity
+  // grader applies the right rubric. lockedPayoff above takes precedence —
+  // it's what the user just chose in this pass.
+  const { data: refreshedPiece } = await supabase
+    .from("pieces")
+    .select("locked_payoff_type")
+    .eq("id", owner.piece_id)
+    .single();
+  const payoffType =
+    lockedPayoff || refreshedPiece?.locked_payoff_type || "UNKNOWN";
+
   const vars = {
     script: revisedScript,
     audience: context.audience,
     channel: context.channel,
     traction: context.traction,
     topic_summary: context.topic_summary,
+    payoff_type: payoffType,
   };
 
   let regraded: DimensionGrade[];

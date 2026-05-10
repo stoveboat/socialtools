@@ -256,18 +256,28 @@ Respond with only the JSON object.`,
     name: "Specificity Throughout",
     user_prompt: `Grade the SPECIFICITY THROUGHOUT this script.
 
-Strong specificity means: the script uses concrete nouns, specific numbers, named tools, vivid sensory details, and direct language. Phrases like "biological espresso machine" or "a dotted Moleskine notebook" carry specificity. The viewer can picture what's being described.
+The standard for specificity depends on the script's payoff type. Different payoffs do rhetorical work in different ways, so vague language is a failure for some and intentional for others. Calibrate the grade to the script's payoff type.
 
-Weak specificity means: the script is dense with vague language. Words and phrases that signal weak specificity include: "things that," "kind of," "really," "important," "stuff," "various," "different types," "etc.", "and so on," "you know."
+The script's payoff type: {{payoff_type}}
 
-Look for:
-- Concrete nouns vs. abstract nouns.
-- Named examples vs. unnamed gestures.
-- Specific numbers vs. vague quantities.
-- Sensory details vs. abstract claims.
-- Filler phrases vs. content-bearing phrases.
+Standard by payoff type:
 
-This is a textural grade — it scans across the whole script, not a single dimension. A script can be specific in some sections and vague in others.
+- TACTIC payoff (high standard): Hold the conventional bar. Vague language genuinely undermines tactical content. Phrases like "things that," "kind of," "really," "important," "stuff" are failures. Reward named tools, specific numbers, concrete steps, sensory detail. A tactical script that says "use a planner" without naming the planner is weak.
+
+- PERMISSION, REFRAME, RECOGNITION, or TRIBE-FLAG payoff (shifted standard): Reward concrete lived examples and personal anchors — the speaker's actual practice, real moments, sensory grounding ("a dotted Moleskine notebook," "the espresso machine on my counter"). Do NOT penalize deliberate non-prescriptiveness. A permission piece that says "coffee, a little reading, maybe some exercise" is appropriate even though it's vague by tactical standards — the rhetorical work depends on NOT being prescriptive. Penalize only when vague language is filler ("you know," "and so on," "various stuff") rather than rhetorical choice.
+
+- LANGUAGE or ATMOSPHERE payoff (most lenient): The payoff depends on evocative, atmospheric, or naming language — not on concrete tactics. Reward vivid imagery, sensory texture, well-chosen abstraction. Penalize only true filler ("you know what I mean," meaningless qualifiers).
+
+- UNKNOWN payoff (default): Apply the conventional tactical standard. Note in the evidence that you don't know the payoff type and the grade may shift once it's determined.
+
+In all cases, look for:
+- Concrete vs. abstract nouns.
+- Named vs. unnamed examples.
+- Specific vs. vague quantities.
+- Sensory vs. abstract claims.
+- Filler that's not doing rhetorical work.
+
+This is a textural grade — it scans across the whole script. A script can be specific in some sections and vague in others.
 
 Channel context:
 - Audience: {{audience}}
@@ -278,7 +288,7 @@ Script:
 {{script}}
 """
 
-Grade SPECIFICITY THROUGHOUT only. Quote specific examples of strong specificity AND specific examples of vague language.
+Grade SPECIFICITY THROUGHOUT calibrated to the payoff type above. In your evidence, name the payoff type you're calibrating to and quote both the strong specificity AND any vague language. If your grade is lenient because the vague language is rhetorical (permission/reframe/recognition/tribe-flag/language/atmosphere payoffs), say so explicitly.
 
 Respond with only the JSON object.`,
   },

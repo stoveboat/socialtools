@@ -25,7 +25,9 @@ export async function POST(
 
   const { data: piece, error: pieceError } = await supabase
     .from("pieces")
-    .select("id, source_script, refined_script, user_id")
+    .select(
+      "id, source_script, refined_script, user_id, locked_payoff_type",
+    )
     .eq("id", pieceId)
     .single();
   if (pieceError || !piece) {
@@ -74,7 +76,13 @@ export async function POST(
 
   let report;
   try {
-    report = await runDiagnostic({ script, audience, channel, traction });
+    report = await runDiagnostic({
+      script,
+      audience,
+      channel,
+      traction,
+      payoff_type: piece.locked_payoff_type ?? undefined,
+    });
   } catch (err) {
     return NextResponse.json(
       { error: "grading_failed", detail: (err as Error).message },

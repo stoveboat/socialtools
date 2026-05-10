@@ -13,6 +13,7 @@ export interface RunDiagnosticOptions {
   audience?: string;
   channel?: string;
   traction?: string;
+  payoff_type?: string; // human-readable label, e.g. "Permission". Empty/missing = UNKNOWN.
   onDimensionComplete?: (grade: DimensionGrade) => void;
   onPhase0Complete?: (context: ChannelContext) => void;
 }
@@ -89,6 +90,7 @@ export async function runDiagnostic(
     channel: context.channel,
     traction: context.traction,
     topic_summary: context.topic_summary,
+    payoff_type: opts.payoff_type?.trim() || "UNKNOWN",
   };
 
   const dimension_grades = await Promise.all(

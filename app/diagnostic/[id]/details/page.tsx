@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { SiteHeader } from "@/components/header";
-import { GradeBadge } from "@/components/grade-badge";
-import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
-import { loadLatestSourceDiagnostic } from "@/lib/db/diagnostic";
-import type { Grade } from "@/lib/diagnostics/types";
-
-const GRADE_RANK: Record<Grade, number> = { A: 4, B: 3, C: 2, D: 1, F: 0 };
+import { loadLatestDiagnosticAny } from "@/lib/db/diagnostic";
+import {
+  PASS_DIMENSIONS,
+  type PassId,
+} from "@/lib/diagnostics/passes";
+import type { DimensionId, Grade } from "@/lib/diagnostics/types";
+import { DimensionCard } from "./dimension-card";
 
 const DIMENSION_ORDER = [
   "spine",
@@ -22,6 +23,15 @@ const DIMENSION_ORDER = [
   "voice",
   "off_positioning",
 ];
+
+function passForDimension(dimId: string): PassId | null {
+  for (const passId of Object.keys(PASS_DIMENSIONS) as PassId[]) {
+    if ((PASS_DIMENSIONS[passId] as readonly string[]).includes(dimId)) {
+      return passId;
+    }
+  }
+  return null;
+}
 
 export default async function DetailsPage({
   params,
@@ -43,10 +53,24 @@ export default async function DetailsPage({
     .single();
   if (!piece) notFound();
 
-  const diag = await loadLatestSourceDiagnostic(id);
+  const diag = await loadLatestDiagnosticAny(id);
   if (!diag) redirect(`/diagnostic/${id}`);
 
-  // Order in spec: foundation first, then execution.
+  const { data: overrideRows } = await supabase
+    .from("dimension_overrides")
+    .select("dimension_id, scope, reason")
+    .eq("piece_id", id);
+  const overrideMap = new Map<
+    string,
+    { scope: "piece" | "pass"; reason: string | null }
+  >();
+  for (const r of overrideRows ?? []) {
+    overrideMap.set(r.dimension_id, {
+      scope: r.scope as "piece" | "pass",
+      reason: r.reason,
+    });
+  }
+
   const grades = diag.grades.slice().sort((a, b) => {
     const aIdx = DIMENSION_ORDER.indexOf(a.dimension_id);
     const bIdx = DIMENSION_ORDER.indexOf(b.dimension_id);
@@ -85,42 +109,38 @@ export default async function DetailsPage({
           <p className="text-sm text-muted-foreground">
             {counts.A} grades at A, {counts.B} at B, {counts.C} at C,{" "}
             {counts.belowC} below C.
+            {overrideMap.size > 0 ? (
+              <> · {overrideMap.size} marked intentional</>
+            ) : null}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            If the grader is wrong about a dimension being weak — common for
+            calibration mismatches like vague language in a permission piece
+            — mark it intentional. The grade stays in the diagnostic for
+            transparency, but the dimension stops being surfaced as needing
+            repair.
           </p>
         </header>
 
         <ul className="space-y-3">
           {grades.map((g) => {
-            const weak = GRADE_RANK[g.grade] <= 2;
+            const passId = passForDimension(g.dimension_id);
+            const passHref = passId
+              ? `/repair/${diag.id}/${passId}`
+              : null;
             return (
-              <li
+              <DimensionCard
                 key={g.dimension_id}
-                className="rounded-lg border p-5 space-y-3"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <GradeBadge grade={g.grade} />
-                    <h2 className="font-semibold">{g.dimension_name}</h2>
-                  </div>
-                  {weak ? (
-                    <Link href={`/repair/${diag.id}/${g.dimension_id}`}>
-                      <Button size="sm" variant="outline">
-                        Fix this
-                      </Button>
-                    </Link>
-                  ) : (
-                    <span className="text-emerald-700 text-sm">✓ solid</span>
-                  )}
-                </div>
-                <blockquote className="border-l-2 pl-3 text-sm leading-relaxed text-muted-foreground">
-                  {g.evidence}
-                </blockquote>
-                {g.repair_suggestion ? (
-                  <p className="text-sm">
-                    <span className="font-medium">Suggested repair: </span>
-                    {g.repair_suggestion}
-                  </p>
-                ) : null}
-              </li>
+                pieceId={id}
+                diagnosticId={diag.id}
+                dimensionId={g.dimension_id as DimensionId}
+                dimensionName={g.dimension_name}
+                grade={g.grade as Grade}
+                evidence={g.evidence}
+                repairSuggestion={g.repair_suggestion ?? ""}
+                passHref={passHref}
+                override={overrideMap.get(g.dimension_id) ?? null}
+              />
             );
           })}
         </ul>

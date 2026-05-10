@@ -37,9 +37,12 @@ const isWeak = (g: Grade) => g === "C" || g === "D" || g === "F";
 
 export function passesNeeded<
   T extends { dimension_id: string; grade: Grade },
->(grades: T[]): PassId[] {
+>(grades: T[], overriddenIds: Set<string> = new Set()): PassId[] {
   const weakIds = new Set(
-    grades.filter((g) => isWeak(g.grade)).map((g) => g.dimension_id),
+    grades
+      .filter((g) => isWeak(g.grade))
+      .map((g) => g.dimension_id)
+      .filter((id) => !overriddenIds.has(id)),
   );
   const needed: PassId[] = [];
   for (const passId of PASSES_IN_ORDER) {

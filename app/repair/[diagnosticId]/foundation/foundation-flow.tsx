@@ -176,6 +176,7 @@ export function FoundationFlow({
 
   // Revision review surface — replaces the form once generation succeeds.
   if (revision) {
+    const payoffLabel = PAYOFF_TYPES.find((p) => p.id === payoffType)?.label;
     return (
       <RevisionReview
         diagnosticId={diagnosticId}
@@ -190,6 +191,7 @@ export function FoundationFlow({
           setGenError(null);
         }}
         generating={generating}
+        lockedPayoffType={payoffLabel}
       />
     );
   }

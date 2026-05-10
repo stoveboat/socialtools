@@ -65,14 +65,33 @@ export default async function SummaryPage({
   const sourceDiag = await loadLatestSourceDiagnostic(id);
   const isRefined = latestDiag.script_version === "refined";
 
-  const weakGrades = latestDiag.grades.filter((g) =>
-    isWeak(g.grade as Grade),
+  // User-marked "intentional" overrides — these dimensions are excluded from
+  // the "needs repair" computation but still surface their grade in the
+  // diagnostic for transparency.
+  const { data: overrideRows } = await supabase
+    .from("dimension_overrides")
+    .select("dimension_id, scope, reason")
+    .eq("piece_id", id);
+  const overriddenIds = new Set(
+    (overrideRows ?? []).map((r) => r.dimension_id),
+  );
+  const overrideMeta: Record<
+    string,
+    { scope: string; reason: string | null }
+  > = {};
+  for (const r of overrideRows ?? []) {
+    overrideMeta[r.dimension_id] = { scope: r.scope, reason: r.reason };
+  }
+
+  const weakGrades = latestDiag.grades.filter(
+    (g) => isWeak(g.grade as Grade) && !overriddenIds.has(g.dimension_id),
   );
   const passes = passesNeeded(
     latestDiag.grades.map((g) => ({
       dimension_id: g.dimension_id,
       grade: g.grade as Grade,
     })),
+    overriddenIds,
   );
   const recommendedPass: PassId | null = passes[0] ?? null;
 
@@ -141,6 +160,18 @@ export default async function SummaryPage({
           <p className="text-sm text-muted-foreground">
             {counts.A} grades at A, {counts.B} at B, {counts.C} at C,{" "}
             {counts.belowC} below C.
+            {overriddenIds.size > 0 ? (
+              <>
+                {" · "}
+                {overriddenIds.size} marked intentional ·{" "}
+                <Link
+                  href={`/diagnostic/${id}/details`}
+                  className="underline"
+                >
+                  manage
+                </Link>
+              </>
+            ) : null}
             {isRefined && piece.refined_script ? (
               <>
                 {" "}

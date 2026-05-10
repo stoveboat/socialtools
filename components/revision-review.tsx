@@ -24,6 +24,9 @@ interface RevisionReviewProps {
   onIterate: () => void;
   onDiscard: () => void;
   generating: boolean;
+  // Foundation pass uses this to lock the user's payoff-type choice so
+  // subsequent re-grades can apply payoff-aware rubrics.
+  lockedPayoffType?: string;
 }
 
 export function RevisionReview({
@@ -36,6 +39,7 @@ export function RevisionReview({
   onIterate,
   onDiscard,
   generating,
+  lockedPayoffType,
 }: RevisionReviewProps) {
   const router = useRouter();
   const [accepting, setAccepting] = useState(false);
@@ -50,7 +54,10 @@ export function RevisionReview({
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ revised_script: revision.revised_script }),
+          body: JSON.stringify({
+            revised_script: revision.revised_script,
+            locked_payoff_type: lockedPayoffType,
+          }),
         },
       );
       if (!res.ok) {
