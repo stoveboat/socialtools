@@ -3,6 +3,22 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
+// Resolve the canonical site URL for outbound redirect links (e.g., email
+// confirmation). Precedence:
+//   1. Explicit NEXT_PUBLIC_SITE_URL — for custom domains or local overrides.
+//   2. VERCEL_PROJECT_PRODUCTION_URL — Vercel-provided, points at the
+//      production domain regardless of which deployment is serving.
+//   3. VERCEL_URL — the specific deployment URL (preview deploys etc.).
+//   4. localhost — development fallback.
+function resolveSiteUrl(): string {
+  if (process.env.NEXT_PUBLIC_SITE_URL) return process.env.NEXT_PUBLIC_SITE_URL;
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+  }
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  return "http://localhost:3000";
+}
+
 export async function loginWithPassword(formData: FormData) {
   const email = String(formData.get("email") ?? "");
   const password = String(formData.get("password") ?? "");
@@ -25,7 +41,7 @@ export async function signupWithPassword(formData: FormData) {
     email,
     password,
     options: {
-      emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/auth/confirm`,
+      emailRedirectTo: `${resolveSiteUrl()}/auth/confirm`,
     },
   });
 
