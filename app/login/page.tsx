@@ -11,7 +11,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { loginWithPassword } from "./actions";
-import { GoogleButton } from "./google-button";
 
 export default async function LoginPage({
   searchParams,
@@ -26,7 +25,7 @@ export default async function LoginPage({
         <CardHeader>
           <CardTitle>Sign in</CardTitle>
           <CardDescription>
-            Use your email and password, or continue with Google.
+            Use your email and password.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -48,11 +47,6 @@ export default async function LoginPage({
               Sign in
             </Button>
           </form>
-          <div className="relative text-center text-xs text-muted-foreground">
-            <span className="bg-card relative z-10 px-2">or</span>
-            <div className="absolute inset-y-1/2 inset-x-0 border-t" />
-          </div>
-          <GoogleButton />
         </CardContent>
         <CardFooter className="text-sm text-muted-foreground">
           No account?{" "}

@@ -11,7 +11,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { signupWithPassword } from "@/app/login/actions";
-import { GoogleButton } from "@/app/login/google-button";
 
 export default async function SignupPage({
   searchParams,
@@ -25,9 +24,7 @@ export default async function SignupPage({
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>Create an account</CardTitle>
-          <CardDescription>
-            Sign up with email and password, or continue with Google.
-          </CardDescription>
+          <CardDescription>Sign up with email and password.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {check_email ? (
@@ -59,11 +56,6 @@ export default async function SignupPage({
               Sign up
             </Button>
           </form>
-          <div className="relative text-center text-xs text-muted-foreground">
-            <span className="bg-card relative z-10 px-2">or</span>
-            <div className="absolute inset-y-1/2 inset-x-0 border-t" />
-          </div>
-          <GoogleButton />
         </CardContent>
         <CardFooter className="text-sm text-muted-foreground">
           Already have an account?{" "}
